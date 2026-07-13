@@ -118,7 +118,7 @@ export const integration = (config?: UserConfig): UserConfig =>
 				name: { label: 'integration', color: 'cyan' },
 				include: ['tests/integration/**/*.test.ts'],
 				setupFiles: ['./tests/setup.ts'],
-				globalSetup: ['./tests/globalSetup.integration.ts'],
+				globalSetup: ['./tests/setupIntegration.ts'],
 				browser: {
 					enabled: true,
 					provider: createBrowserProvider(),

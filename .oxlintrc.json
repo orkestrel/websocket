@@ -48,7 +48,7 @@
 			}
 		},
 		{
-			"files": ["**/globalSetup.*.ts"],
+			"files": ["**/tests/setupIntegration.ts"],
 			"rules": {
 				"import/no-default-export": "off"
 			}
