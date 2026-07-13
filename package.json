@@ -1,21 +1,20 @@
 {
-	"name": "@orkestrel/sqlite",
-	"version": "0.0.2",
-	"description": "A typed, synchronous SQLite wrapper for the @orkestrel line — prepared statements over node:sqlite. Part of the @orkestrel line.",
+	"name": "@orkestrel/websocket",
+	"version": "0.0.1",
+	"description": "A dependency-light RFC 6455 WebSocket for Node — native handshake and framing over duplex streams, with a typed emitter surface. Part of the @orkestrel line.",
 	"keywords": [
-		"database",
 		"node",
-		"node:sqlite",
+		"rfc6455",
 		"server",
-		"sqlite",
-		"typescript"
+		"typescript",
+		"websocket"
 	],
-	"homepage": "https://github.com/orkestrel/sqlite#readme",
-	"bugs": "https://github.com/orkestrel/sqlite/issues",
+	"homepage": "https://github.com/orkestrel/websocket#readme",
+	"bugs": "https://github.com/orkestrel/websocket/issues",
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/orkestrel/sqlite.git"
+		"url": "git+https://github.com/orkestrel/websocket.git"
 	},
 	"files": [
 		"dist",
@@ -63,7 +62,6 @@
 		"prepublishOnly": "npm run format:check && npm run lint:check && npm run check && npm run check:src && npm run build && npm test"
 	},
 	"dependencies": {
-		"@orkestrel/contract": "^0.0.1",
 		"@orkestrel/emitter": "^0.0.1"
 	},
 	"devDependencies": {

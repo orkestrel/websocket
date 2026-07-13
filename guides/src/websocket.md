@@ -2,7 +2,7 @@
 
 > The server-native bidirectional transport: a lean, typed wrapper over a raw upgraded [`node:stream`](https://nodejs.org/api/stream.html) Duplex socket that speaks **only** the [RFC 6455](https://datatracker.ietf.org/doc/html/rfc6455) WebSocket wire protocol — zero npm dependencies (`node:crypto` for the one handshake hash, nothing else). Once an HTTP server hands you an upgraded socket, this wrapper turns that raw byte stream into a typed, observable connection: it owns the upgrade handshake, the masked/unmasked frame codec, ping/pong, and the close handshake, and surfaces messages through a §13 `emitter`.
 >
-> What it deliberately is **not**: it has no knowledge of MCP, JSON-RPC, reconnection, heartbeats, or any message schema. Those belong to a _message_ transport built one layer up — this is only the wire. The whole bit-level codec is three pure, exported functions — `computeWebSocketAccept` / `parseWebSocketFrame` / `encodeWebSocketFrame` — pinned against RFC 6455's own worked byte vectors; the [`NodeWebSocket`](#nodewebsocketinterface) class is the thin stateful driver that runs them over a socket. Keeping the codec pure and the wrapper minimal is the same lean-native-wrapper discipline as the [SQLite](sqlite.md) and [IndexedDB](indexeddb.md) wrappers: a small typed surface over native power, the hard parts exported as testable units. Source: [`src/server/websocket`](../../src/server/websocket). Surfaced through the `@src/server` barrel.
+> What it deliberately is **not**: it has no knowledge of MCP, JSON-RPC, reconnection, heartbeats, or any message schema. Those belong to a _message_ transport built one layer up — this is only the wire. The whole bit-level codec is three pure, exported functions — `computeWebSocketAccept` / `parseWebSocketFrame` / `encodeWebSocketFrame` — pinned against RFC 6455's own worked byte vectors; the [`NodeWebSocket`](#nodewebsocketinterface) class is the thin stateful driver that runs them over a socket. Keeping the codec pure and the wrapper minimal is the same lean-native-wrapper discipline: a small typed surface over native power, the hard parts exported as testable units. Source: [`src/server`](../../src/server). Surfaced through the `@src/server` barrel.
 
 ## Surface
 
@@ -95,11 +95,11 @@ The public methods of the behavioral interface — its `readonly` data members (
 
 ## Contract
 
-These invariants hold across `src/server/websocket` ↔ `websocket.md`:
+These invariants hold across `src/server` ↔ `websocket.md`:
 
 1. **DOC ↔ SOURCE bijection.** Every row in the `## Surface` tables is a real export of the module, and every export appears as a Surface row — exhaustive, both directions (AGENTS §22).
-2. **Wire-only, schema-agnostic.** The wrapper speaks the RFC 6455 frame protocol and nothing else — no MCP, no JSON-RPC, no message schema. A higher transport is built _on_ it (the same minimal-interface discipline as the SQLite and IndexedDB wrappers, AGENTS §21).
-3. **The codec is pure and exhaustively pinned.** `computeWebSocketAccept` / `parseWebSocketFrame` / `encodeWebSocketFrame` are pure functions tested against RFC 6455's own worked byte vectors. `parseWebSocketFrame` returns `undefined` on an **incomplete** buffer (the caller accumulates across `data` chunks, exactly like the core [`SSEParser`](parsers.md)); `encode` and `parse` are exact inverses.
+2. **Wire-only, schema-agnostic.** The wrapper speaks the RFC 6455 frame protocol and nothing else — no MCP, no JSON-RPC, no message schema. A higher transport is built _on_ it (the same minimal-interface discipline, AGENTS §21).
+3. **The codec is pure and exhaustively pinned.** `computeWebSocketAccept` / `parseWebSocketFrame` / `encodeWebSocketFrame` are pure functions tested against RFC 6455's own worked byte vectors. `parseWebSocketFrame` returns `undefined` on an **incomplete** buffer (the caller accumulates across `data` chunks); `encode` and `parse` are exact inverses.
 4. **Server vs. client is the single `key` decision.** A `key` (the client's `Sec-WebSocket-Key`) selects SERVER mode: the wrapper writes the `101 Switching Protocols` handshake with `Sec-WebSocket-Accept: computeWebSocketAccept(key)` and sends **unmasked** frames. No `key` is CLIENT mode: no handshake is written and every outgoing frame is **masked** — RFC 6455 §5.3 mandates client→server masking, and the wrapper enforces it from this one flag, so you never set the mask bit by hand.
 5. **One accumulation buffer, drained frame by frame.** Incoming `data` chunks append to a buffer that is decoded with `parseWebSocketFrame` in a loop, slicing each frame's `consumed` bytes off the front and re-parsing until a partial frame remains. Dispatch by opcode: a data frame (text, binary, or a `0x00` continuation) buffers its fragments and emits one `message` (decoded UTF-8) at `fin`; a ping emits `ping` and is **auto-answered with a pong**; a pong emits `pong`; a close is echoed back (RFC 6455 §5.5.1), ends the socket, and emits the final `close`. A WebSocket message is therefore never assumed to be one `data` chunk — the buffer absorbs the split.
 6. **Observable, and a faulty listener can never sink the socket (§13).** The wrapper exposes a typed `emitter`; listener isolation is the emitter's job. Two error channels stay distinct: the map's `error` event is a **domain** fault — the underlying socket itself errored — whereas a listener that _throws_ is caught by the emitter and routed to its own `error` handler (the `error` constructor option, an `EmitterErrorHandler`), never re-entered as a domain event. A buggy observer is contained; the connection stays alive.
@@ -158,24 +158,35 @@ import { computeWebSocketAccept } from '@src/server'
 computeWebSocketAccept('dGhlIHNhbXBsZSBub25jZQ==') // 's3pPLMBiTxaQ9kYGzzhZRbK+xOo=' (RFC 6455 §1.3)
 ```
 
+### Keep a connection alive, and tear it down on demand
+
+```ts
+import { createNodeWebSocket } from '@src/server'
+
+const ws = createNodeWebSocket({ socket })
+ws.emitter.on('pong', () => console.log('peer is alive'))
+
+const heartbeat = setInterval(() => ws.ping(), 30_000) // liveness probe; answered by an auto-pong
+ws.emitter.on('close', () => clearInterval(heartbeat))
+
+// Later, or on a fatal error — abort immediately without a close handshake:
+ws.destroy()
+```
+
 ### Practices
 
-- **Reach for a message transport, not raw frames, when you have a protocol.** This is the wire-level handle the MCP WebSocket transport is built on; drop to it directly only for bespoke framing where no schema applies. If you find yourself hand-rolling request/response correlation on top, you want the layer above.
+- **Reach for a message transport, not raw frames, when you have a protocol.** This is the wire-level handle a higher-level message transport is built on; drop to it directly only for bespoke framing where no schema applies. If you find yourself hand-rolling request/response correlation on top, you want the layer above.
 - **Let the mode handle masking — never set the mask bit yourself.** Server mode sends unmasked, client mode masks; the single `key` choice decides it. Reach for `encodeWebSocketFrame(..., { masked: true })` only when you are feeding the parser a synthetic client frame (e.g. in a test).
 - **Drive the parser as a stream, never per-chunk.** Accumulate `data`, loop `parseWebSocketFrame`, slice `consumed` off, and treat `undefined` as "need more bytes". A frame can span chunks and a chunk can hold several frames — the buffer is what reconciles both.
 - **Observe everything through the `emitter`.** Wire `message` / `close` / `ping` / `pong` and the domain `error`; a listener that throws is contained by the emitter and surfaced on its own `error` handler (the `error` option), so one bad observer never takes the connection down.
 
 ## Tests
 
-- [`tests/guides/parity.test.ts`](../../tests/guides/src/parity.test.ts) — the `## Surface` ↔ `src/server/websocket` bijection and the `## Methods` ↔ interface/class method parity.
-- [`tests/src/server/websocket/helpers.test.ts`](../../tests/src/server/websocket/helpers.test.ts) — the RFC 6455 codec as pure units against the spec's own byte vectors: the §1.3 handshake accept token, the unmasked + masked "Hello" frames (§5.7), the 7/16/64-bit length-form boundaries (125 / 126 / 65 536), the control opcodes, an incomplete buffer → `undefined` (split mid-header, mid-mask, mid-payload), a frame with trailing bytes (`consumed` recovers the remainder), and the encode↔parse inverse for masked and unmasked frames.
-- [`tests/src/server/websocket/NodeWebSocket.test.ts`](../../tests/src/server/websocket/NodeWebSocket.test.ts) — the wrapper driven end to end over an in-memory `node:stream` Duplex pair (two cross-wired `PassThrough`s — a real bidirectional socket, no mock): the 101 handshake (with subprotocol echo), a masked client text frame → `message`, continuation-fragment reassembly, two frames in one chunk, `send` → an unmasked readable frame, ping → auto-pong, the close handshake + `close` event, `destroy` idempotency, and §13 observer-error isolation.
+- [`tests/guides/src/parity.test.ts`](../../tests/guides/src/parity.test.ts) — the `## Surface` ↔ `src/server` bijection and the `## Methods` ↔ interface/class method parity.
+- [`tests/src/server/helpers.test.ts`](../../tests/src/server/helpers.test.ts) — the RFC 6455 codec as pure units against the spec's own byte vectors: the §1.3 handshake accept token, the unmasked + masked "Hello" frames (§5.7), the 7/16/64-bit length-form boundaries (125 / 126 / 65 536), the control opcodes, an incomplete buffer → `undefined` (split mid-header, mid-mask, mid-payload), a frame with trailing bytes (`consumed` recovers the remainder), and the encode↔parse inverse for masked and unmasked frames.
+- [`tests/src/server/NodeWebSocket.test.ts`](../../tests/src/server/NodeWebSocket.test.ts) — the wrapper driven end to end over an in-memory `node:stream` Duplex pair (two cross-wired `PassThrough`s — a real bidirectional socket, no mock): the 101 handshake (with subprotocol echo), a masked client text frame → `message`, continuation-fragment reassembly, two frames in one chunk, `send` → an unmasked readable frame, ping → auto-pong, the close handshake + `close` event, `destroy` idempotency, and §13 observer-error isolation.
 
 ## See also
 
-- [`sqlite.md`](sqlite.md) — the server SQLite wrapper, the same lean-native-wrapper discipline.
-- [`indexeddb.md`](indexeddb.md) — the browser counterpart of that discipline.
-- [`http.md`](http.md) — the HTTP server spine over `node:http` (the upgrade seam that hands a socket to this wrapper).
-- [`parsers.md`](parsers.md) — the core `SSEParser`, the same incomplete-buffer → `undefined` streaming-decoder contract `parseWebSocketFrame` follows.
 - [`AGENTS.md`](../../AGENTS.md) — §13 emitter, §14 untyped-boundary narrowing, §21 minimal interface, §22 documentation-as-contracts.
-- [`README.md`](README.md) — the guides index.
+- [`README.md`](../README.md) — the guides index.
