@@ -8,7 +8,7 @@ import type { WebSocketFrame } from '@src/server'
 import { request as httpRequest } from 'node:http'
 import { Duplex, PassThrough } from 'node:stream'
 import { afterEach } from 'vitest'
-import { parseWebSocketFrame } from '@src/server'
+import { encodeWebSocketFrame, parseWebSocketFrame } from '@src/server'
 
 // ── Teardown registrar (tracked-resource cleanup) ────────────────────────────
 //
@@ -211,6 +211,58 @@ export function flushSocket(): Promise<void> {
  * @param client - The client end of a {@link duplexPair}
  * @returns A handle whose `frames` accumulates each decoded {@link WebSocketFrame}
  */
+// ── Fuzz corpus + frame builder (codec / engine fuzz tests) ──────────────────
+//
+// AGENTS §16.1: fuzz/property tests over the codec and the engine need random byte
+// buffers and hand-built frames with an explicit FIN bit — folded into one shared
+// pair rather than each test hand-rolling `wire[0] &= 0x7f`.
+
+/** Options for {@link frame} — masking plus an explicit FIN control. */
+export interface TestFrameOptions {
+	readonly masked?: boolean
+	readonly fin?: boolean
+	readonly mask?: Buffer
+}
+
+/**
+ * Build `length` deterministic pseudo-random bytes from a seeded generator.
+ *
+ * @param rng - A seeded generator (see `createRandom` in `tests/setup.ts`)
+ * @param length - The number of bytes to generate
+ * @returns The generated buffer
+ */
+export function randomBuffer(rng: () => number, length: number): Buffer {
+	const buffer = Buffer.alloc(length)
+	for (let index = 0; index < length; index += 1) buffer[index] = Math.floor(rng() * 256)
+	return buffer
+}
+
+/**
+ * Encode a single RFC 6455 frame via {@link encodeWebSocketFrame}, with an explicit
+ * FIN control the encoder itself does not expose — the shared replacement for
+ * repeated in-test `wire[0] &= 0x7f` bit-twiddling.
+ *
+ * @param opcode - The frame opcode
+ * @param payload - The payload, a `Buffer` or a UTF-8 `string`
+ * @param options - Masking + FIN control ({@link TestFrameOptions}); FIN defaults to `true`
+ * @returns The complete frame as wire bytes
+ */
+export function frame(
+	opcode: number,
+	payload: Buffer | string,
+	options?: TestFrameOptions,
+): Buffer {
+	const wire = encodeWebSocketFrame(opcode, payload, {
+		masked: options?.masked,
+		mask: options?.mask,
+	})
+	if (options?.fin === false) {
+		const first = wire[0] ?? 0
+		wire[0] = first & 0x7f
+	}
+	return wire
+}
+
 export function readClientFrames(client: Duplex): { readonly frames: readonly WebSocketFrame[] } {
 	const frames: WebSocketFrame[] = []
 	let buffer = Buffer.alloc(0)
@@ -225,10 +277,10 @@ export function readClientFrames(client: Duplex): { readonly frames: readonly We
 			handshook = true
 		}
 		for (;;) {
-			const frame = parseWebSocketFrame(buffer)
-			if (frame === undefined) break
-			buffer = buffer.subarray(frame.consumed)
-			frames.push(frame)
+			const parsed = parseWebSocketFrame(buffer)
+			if (parsed === undefined) break
+			buffer = buffer.subarray(parsed.consumed)
+			frames.push(parsed)
 		}
 	})
 	return { frames }

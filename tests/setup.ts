@@ -37,3 +37,98 @@ export function createRecorder<TArgs extends readonly unknown[]>(): TestRecorder
 		},
 	}
 }
+
+// ── Deterministic seeded randomness + text corpus (fuzz/property tests) ──────
+//
+// AGENTS §16.1: fuzz/property/limit tests need the SAME reproducible pseudo-random
+// sequence across a run — a seeded mulberry32 generator — plus a deterministic
+// BMP-safe text builder over it, shared by every node AND browser-side test.
+
+/**
+ * Create a deterministic mulberry32 pseudo-random generator seeded by `seed`.
+ *
+ * @param seed - The 32-bit seed; the same seed always yields the same sequence
+ * @returns A function returning the next pseudo-random number in `[0, 1)`
+ */
+export function createRandom(seed: number): () => number {
+	let a = seed >>> 0
+	return () => {
+		a = (a + 0x6d2b79f5) | 0
+		let t = Math.imul(a ^ (a >>> 15), 1 | a)
+		t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+		return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+	}
+}
+
+/**
+ * Build a deterministic, BMP-safe, guaranteed-valid-UTF-8 string of `length` code
+ * points, sampling each from `rng` while avoiding the surrogate range.
+ *
+ * @param rng - A seeded generator (see {@link createRandom})
+ * @param length - The number of code points to generate
+ * @returns The generated string
+ */
+export function buildText(rng: () => number, length: number): string {
+	let text = ''
+	for (let index = 0; index < length; index += 1) {
+		let point = Math.floor(rng() * 0xffff)
+		if (point >= 0xd800 && point <= 0xdfff) point -= 0x800
+		text += String.fromCodePoint(point)
+	}
+	return text
+}
+
+/**
+ * Resolve after `ms` milliseconds — the §16.1 canonical delay helper, used instead
+ * of an inline `setTimeout` promise wherever a test needs a short deterministic wait.
+ *
+ * @param ms - The delay in milliseconds
+ * @returns A promise resolving once the delay elapses
+ */
+export function waitForDelay(ms = 0): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+// ── Browser WebSocket helpers (pure — WebSocket + Promise only) ──────────────
+//
+// AGENTS §16.1: the integration project loads `setup.ts` into its headless-Chromium
+// browser tests too, so these tiny, framework-free WebSocket helpers live here
+// rather than in a node-only setup file — they touch no `node:*` API.
+
+/**
+ * Open a `WebSocket` to `url` and resolve once it reaches the `open` state.
+ *
+ * @param url - The WebSocket URL to connect to
+ * @returns A promise resolving to the opened socket
+ */
+export function connect(url: string): Promise<WebSocket> {
+	return new Promise((resolve, reject) => {
+		const ws = new WebSocket(url)
+		ws.addEventListener('open', () => resolve(ws), { once: true })
+		ws.addEventListener('error', (event) => reject(event), { once: true })
+	})
+}
+
+/**
+ * Resolve with the next `message` event received on `ws`.
+ *
+ * @param ws - The socket to listen on
+ * @returns A promise resolving to the next {@link MessageEvent}
+ */
+export function nextMessage(ws: WebSocket): Promise<MessageEvent> {
+	return new Promise((resolve) => {
+		ws.addEventListener('message', (event) => resolve(event), { once: true })
+	})
+}
+
+/**
+ * Resolve with the next `close` event received on `ws`.
+ *
+ * @param ws - The socket to listen on
+ * @returns A promise resolving to the next {@link CloseEvent}
+ */
+export function nextClose(ws: WebSocket): Promise<CloseEvent> {
+	return new Promise((resolve) => {
+		ws.addEventListener('close', (event) => resolve(event), { once: true })
+	})
+}

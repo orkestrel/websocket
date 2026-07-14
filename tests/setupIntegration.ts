@@ -44,6 +44,14 @@ export default async function setup({ provide }: TestProject): Promise<() => Pro
 						ws.close(1000, 'done')
 						return
 					}
+					if (text === 'close-4000') {
+						ws.close(4000, 'app-reason')
+						return
+					}
+					if (text === 'count') {
+						ws.send(`count: ${sockets.size}`)
+						return
+					}
 					ws.send(`echo: ${text}`)
 				},
 				close: () => {
