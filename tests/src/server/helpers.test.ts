@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest'
 import {
 	computeWebSocketAccept,
 	encodeWebSocketFrame,
+	isCloseCode,
+	measureWebSocketFrame,
+	parseUTF8,
 	parseWebSocketFrame,
 	WEBSOCKET_OPCODE_BINARY,
 	WEBSOCKET_OPCODE_CLOSE,
@@ -183,5 +186,101 @@ describe('encode ↔ parse are inverses', () => {
 		const a = encodeWebSocketFrame(WEBSOCKET_OPCODE_TEXT, HELLO, { masked: true, mask: MASK })
 		const b = encodeWebSocketFrame(WEBSOCKET_OPCODE_TEXT, HELLO, { masked: true, mask: MASK })
 		expect(a.equals(b)).toBe(true)
+	})
+})
+
+describe('parseWebSocketFrame — masked / rsv surfaced', () => {
+	it('surfaces masked: true and rsv: 0 for a masked frame with no extension bits', () => {
+		const frame = parseWebSocketFrame(
+			encodeWebSocketFrame(WEBSOCKET_OPCODE_TEXT, HELLO, { masked: true }),
+		)
+		expect(frame?.masked).toBe(true)
+		expect(frame?.rsv).toBe(0)
+	})
+
+	it('surfaces masked: false for an unmasked frame', () => {
+		const frame = parseWebSocketFrame(encodeWebSocketFrame(WEBSOCKET_OPCODE_TEXT, HELLO))
+		expect(frame?.masked).toBe(false)
+	})
+
+	it('surfaces a non-zero rsv decoded from byte 0 bits 4-6 (>> 4, not >> 3)', () => {
+		const frame = encodeWebSocketFrame(WEBSOCKET_OPCODE_TEXT, HELLO, { masked: true })
+		frame[0] = (frame[0] ?? 0) | 0x70 // set RSV1+RSV2+RSV3
+		const parsed = parseWebSocketFrame(frame)
+		expect(parsed?.rsv).toBe(7)
+	})
+})
+
+describe('measureWebSocketFrame', () => {
+	it('reads the 7-bit length form without needing the payload', () => {
+		const header = Buffer.from([0x81, 0x05]) // len 5, no payload bytes present
+		expect(measureWebSocketFrame(header)).toBe(5)
+	})
+
+	it('reads the 126 + 16-bit extended length form', () => {
+		const header = Buffer.alloc(4)
+		header[0] = 0x82
+		header[1] = 126
+		header.writeUInt16BE(300, 2)
+		expect(measureWebSocketFrame(header)).toBe(300)
+	})
+
+	it('reads the 127 + 64-bit extended length form', () => {
+		const header = Buffer.alloc(10)
+		header[0] = 0x82
+		header[1] = 127
+		header.writeUInt32BE(0, 2)
+		header.writeUInt32BE(70_000, 6)
+		expect(measureWebSocketFrame(header)).toBe(70_000)
+	})
+
+	it('returns undefined when fewer than 2 header bytes are buffered', () => {
+		expect(measureWebSocketFrame(Buffer.from([0x81]))).toBeUndefined()
+	})
+
+	it('returns undefined when the 16-bit extended length is split mid-header', () => {
+		expect(measureWebSocketFrame(Buffer.from([0x82, 126, 0x01]))).toBeUndefined()
+	})
+
+	it('returns undefined when the 64-bit extended length is split mid-header', () => {
+		expect(measureWebSocketFrame(Buffer.from([0x82, 127, 0, 0, 0, 0, 0]))).toBeUndefined()
+	})
+})
+
+describe('parseUTF8', () => {
+	it('decodes a valid UTF-8 byte sequence', () => {
+		expect(parseUTF8(Buffer.from('héllo wörld', 'utf-8'))).toBe('héllo wörld')
+	})
+
+	it('decodes an empty buffer to an empty string', () => {
+		expect(parseUTF8(Buffer.alloc(0))).toBe('')
+	})
+
+	it('returns undefined for a lone continuation byte (invalid UTF-8)', () => {
+		expect(parseUTF8(Buffer.from([0x80]))).toBeUndefined()
+	})
+
+	it('returns undefined for a truncated multi-byte sequence', () => {
+		expect(parseUTF8(Buffer.from([0xff, 0xfe]))).toBeUndefined()
+	})
+})
+
+describe('isCloseCode', () => {
+	it('accepts valid RFC 6455 receivable codes', () => {
+		expect(isCloseCode(1000)).toBe(true)
+		expect(isCloseCode(1009)).toBe(true)
+		expect(isCloseCode(3000)).toBe(true)
+	})
+
+	it('accepts the IANA-registered 1012-1014 interop extension', () => {
+		expect(isCloseCode(1012)).toBe(true)
+		expect(isCloseCode(1014)).toBe(true)
+	})
+
+	it('rejects reserved-for-local-use-only and unassigned codes', () => {
+		expect(isCloseCode(1005)).toBe(false)
+		expect(isCloseCode(1006)).toBe(false)
+		expect(isCloseCode(999)).toBe(false)
+		expect(isCloseCode(1004)).toBe(false)
 	})
 })

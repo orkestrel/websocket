@@ -48,3 +48,27 @@ export const WEBSOCKET_READY_CLOSED: WebSocketReadyState = 3
 
 /** Normal-closure status code (RFC 6455 §7.4.1) — the default `close` code. */
 export const WEBSOCKET_CLOSE_NORMAL = 1000
+
+/** Protocol-error status code (RFC 6455 §7.4.1) — a framing/state rule was violated. */
+export const WEBSOCKET_CLOSE_PROTOCOL = 1002
+
+/** Unsupported-data status code (RFC 6455 §7.4.1) — the endpoint received a data type it cannot accept (e.g. binary on a text-only endpoint). */
+export const WEBSOCKET_CLOSE_UNSUPPORTED = 1003
+
+/** Invalid-frame-payload-data status code (RFC 6455 §7.4.1) — e.g. non-UTF-8 text or an unparseable close reason. */
+export const WEBSOCKET_CLOSE_INVALID = 1007
+
+/** Message-too-big status code (RFC 6455 §7.4.1) — a reassembled message exceeded the payload cap. */
+export const WEBSOCKET_CLOSE_TOOBIG = 1009
+
+/** The default maximum inbound single-frame length AND reassembled-message total byte count (100 MiB — the `ws` package default). */
+export const WEBSOCKET_MAX_PAYLOAD = 104_857_600
+
+/** The default close-handshake timeout in milliseconds — how long `close()` waits for the peer's echo before tearing the socket down. */
+export const WEBSOCKET_CLOSE_TIMEOUT_MS = 30_000
+
+/** The post-`#fail` flush grace in milliseconds — how long a validation-breach close frame is given to flush through the socket's write buffer before the hard `destroy()` fallback fires (the normal path destroys sooner, on the `end()` flush callback). */
+export const WEBSOCKET_FAIL_TIMEOUT_MS = 1_000
+
+/** The maximum control-frame payload length in bytes (RFC 6455 §5.5). */
+export const WEBSOCKET_CONTROL_MAXLEN = 125

@@ -40,7 +40,10 @@ export type WebSocketCloseCode = number
  * identifies the frame kind (one of the `WEBSOCKET_OPCODE_*` values); `payload` is
  * the already-unmasked application data; `consumed` is the total byte count the frame
  * occupied (header + mask + payload), so the caller slices it off the front of its
- * accumulation buffer and re-parses the remainder. Produced by
+ * accumulation buffer and re-parses the remainder. `masked` is the mask bit off byte 1
+ * (client→server frames MUST be masked, RFC 6455 §5.1); `rsv` is the three reserved
+ * bits off byte 0 packed into a single 0–7 value (RFC 6455 §5.2) — non-zero means an
+ * extension the wrapper does not negotiate, so the caller rejects it. Produced by
  * {@link parseWebSocketFrame}.
  */
 export interface WebSocketFrame {
@@ -48,6 +51,8 @@ export interface WebSocketFrame {
 	readonly opcode: number
 	readonly payload: Buffer
 	readonly consumed: number
+	readonly masked: boolean
+	readonly rsv: number
 }
 
 /**
@@ -119,7 +124,15 @@ export type NodeWebSocketEventMap = {
  * 6455 §5.3). `head` is any bytes buffered after the upgrade headers (replayed through
  * the parser). `protocol` is a negotiated subprotocol to echo in the handshake. `on`
  * wires initial listeners at construction (AGENTS §8 reserved option); `error` is the
- * emitter's listener-error handler (§13 — a listener throw routes here).
+ * emitter's listener-error handler (§13 — a listener throw routes here). `payload` caps
+ * both a single inbound frame's declared length AND the total bytes of a reassembled
+ * fragmented message (default `WEBSOCKET_MAX_PAYLOAD`) — a breach closes 1009. `timeout`
+ * is how long the wrapper waits, after sending a close frame, for the peer's echo before
+ * it gives up and tears the socket down (default `WEBSOCKET_CLOSE_TIMEOUT_MS`). `signal`
+ * is the external cancellation seam — on abort the socket destroys; composes with the
+ * line's `@orkestrel/abort` and `@orkestrel/timeout` primitives, which expose native
+ * `AbortSignal`s. An already-aborted signal tears the socket down immediately after
+ * construction.
  */
 export interface NodeWebSocketOptions {
 	readonly socket: Duplex
@@ -129,6 +142,9 @@ export interface NodeWebSocketOptions {
 	readonly on?: EmitterHooks<NodeWebSocketEventMap>
 	/** The emitter's listener-error handler (AGENTS §13) — a listener throw routes here, not to a domain event. */
 	readonly error?: EmitterErrorHandler
+	readonly payload?: number
+	readonly timeout?: number
+	readonly signal?: AbortSignal
 }
 
 // === Wrapper

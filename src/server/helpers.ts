@@ -57,6 +57,7 @@ export function parseWebSocketFrame(buffer: Buffer): WebSocketFrame | undefined 
 	const secondByte = buffer[1] ?? 0
 
 	const fin = (firstByte & 0x80) !== 0
+	const rsv = (firstByte & 0x70) >> 4
 	const opcode = firstByte & 0x0f
 	const masked = (secondByte & 0x80) !== 0
 	let length = secondByte & 0x7f
@@ -94,7 +95,100 @@ export function parseWebSocketFrame(buffer: Buffer): WebSocketFrame | undefined 
 		}
 	}
 
-	return { fin, opcode, payload, consumed: offset + length }
+	return { fin, opcode, payload, consumed: offset + length, masked, rsv }
+}
+
+/**
+ * Read the declared payload length off the front of a buffer, without buffering or
+ * reading the payload itself.
+ *
+ * @remarks
+ * Decodes only byte 1's 7-bit length field, extended by the 16-bit (`126`) or 64-bit
+ * (`127`) form exactly like {@link parseWebSocketFrame} — but stops there, so a caller
+ * can reject an over-cap frame the moment its length is known, before the payload
+ * bytes have even arrived. Returns `undefined` until the length field itself is fully
+ * buffered (mirrors the parser's incomplete-buffer contract). Pure; never throws.
+ *
+ * @param buffer - The accumulation buffer to read the next frame's length from
+ * @returns The declared payload length, or `undefined` when the buffer is too short to know it yet
+ *
+ * @example
+ * ```ts
+ * const declared = measureWebSocketFrame(buffer)
+ * if (declared !== undefined && declared > limit) fail(WEBSOCKET_CLOSE_TOOBIG)
+ * ```
+ */
+export function measureWebSocketFrame(buffer: Buffer): number | undefined {
+	if (buffer.length < 2) return undefined
+
+	const secondByte = buffer[1] ?? 0
+	let length = secondByte & 0x7f
+	const offset = 2
+
+	if (length === 126) {
+		if (buffer.length < offset + 2) return undefined
+		length = buffer.readUInt16BE(offset)
+	} else if (length === 127) {
+		if (buffer.length < offset + 8) return undefined
+		const high = buffer.readUInt32BE(offset)
+		const low = buffer.readUInt32BE(offset + 4)
+		length = high * 0x1_0000_0000 + low
+	}
+
+	return length
+}
+
+/**
+ * Decode a byte sequence as strict UTF-8, or signal it is malformed.
+ *
+ * @remarks
+ * Wraps `TextDecoder('utf-8', { fatal: true })` in a try/catch so a malformed sequence
+ * returns `undefined` instead of throwing (AGENTS §14 — a guard-adjacent coercer never
+ * throws on bad input). Pure.
+ *
+ * @param bytes - The raw bytes to decode
+ * @returns The decoded string, or `undefined` when `bytes` is not valid UTF-8
+ *
+ * @example
+ * ```ts
+ * const text = parseUTF8(payload)
+ * if (text === undefined) fail(WEBSOCKET_CLOSE_INVALID)
+ * ```
+ */
+export function parseUTF8(bytes: Buffer): string | undefined {
+	try {
+		return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+	} catch {
+		return undefined
+	}
+}
+
+/**
+ * Whether a numeric value is a valid RFC 6455 close status code to RECEIVE (§7.4.1).
+ *
+ * @remarks
+ * True for `1000`–`1003`, `1007`–`1014`, and the application range `3000`–`4999`; false
+ * for anything below `1000`, the reserved-for-local-use-only codes `1004`–`1006` and
+ * `1015`, and the unassigned `1016`–`2999` range. The `1012`–`1014` extension of the
+ * strict RFC 6455 receivable set is a deliberate IANA-interop choice: those three codes
+ * (Service Restart, Try Again Later, Bad Gateway) are IANA-registered in the WebSocket
+ * Close Code Number Registry and accepted by the `ws` ecosystem and modern conformance
+ * suites, so a peer sending one is not treated as a protocol violation. Pure predicate,
+ * never throws.
+ *
+ * @param code - The close status code to validate
+ * @returns `true` when `code` is a valid RFC 6455 close code
+ *
+ * @example
+ * ```ts
+ * if (!isCloseCode(code)) fail(WEBSOCKET_CLOSE_PROTOCOL)
+ * ```
+ */
+export function isCloseCode(code: number): boolean {
+	if (code >= 1000 && code <= 1003) return true
+	if (code >= 1007 && code <= 1014) return true
+	if (code >= 3000 && code <= 4999) return true
+	return false
 }
 
 /**
