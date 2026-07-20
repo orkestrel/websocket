@@ -48,12 +48,6 @@
 			}
 		},
 		{
-			"files": ["**/tests/setupIntegration.ts"],
-			"rules": {
-				"import/no-default-export": "off"
-			}
-		},
-		{
 			"files": ["*.vue"],
 			"rules": {
 				"import/no-default-export": "off",
