@@ -20,7 +20,7 @@ declare module 'vitest' {
 	}
 }
 
-export default async function setup({ provide }: TestProject): Promise<() => Promise<void>> {
+export async function setup({ provide }: TestProject): Promise<() => Promise<void>> {
 	const sockets = new Set<NodeWebSocketInterface>()
 
 	const server: Server = createServer((_request, response) => {
