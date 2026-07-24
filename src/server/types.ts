@@ -97,18 +97,19 @@ export interface WebSocketClose {
  * `open` — the handshake completed and the socket is ready. `message` — a text frame
  * arrived (its decoded UTF-8 string). `close` — the connection ended (its
  * {@link WebSocketClose} metadata). `error` — the underlying socket faulted (a DOMAIN
- * event). `ping` / `pong` — a control frame arrived (a ping is auto-answered with a pong).
+ * event and then terminates the wrapper). `ping` / `pong` — a control frame arrived
+ * (a ping is auto-answered with a pong).
  * Listener isolation is the emitter's (AGENTS §13): a listener throw is routed to the
  * emitter's `error` handler (the `error` option), never onto this map, so a buggy observer
  * never breaks the socket.
  */
 export type NodeWebSocketEventMap = {
-	open: []
-	message: [message: string]
-	close: [code: number | undefined, reason: string | undefined]
-	error: [error: unknown]
-	ping: []
-	pong: []
+	readonly open: readonly []
+	readonly message: readonly [message: string]
+	readonly close: readonly [code: number | undefined, reason: string | undefined]
+	readonly error: readonly [error: unknown]
+	readonly ping: readonly []
+	readonly pong: readonly []
 }
 
 // === Options

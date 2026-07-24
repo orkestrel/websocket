@@ -3,6 +3,9 @@ import {
 	computeWebSocketAccept,
 	encodeWebSocketFrame,
 	isCloseCode,
+	isWebSocketFrameCanonical,
+	isWebSocketKey,
+	isWebSocketProtocol,
 	measureWebSocketFrame,
 	parseUTF8,
 	parseWebSocketFrame,
@@ -12,7 +15,7 @@ import {
 	WEBSOCKET_OPCODE_PONG,
 	WEBSOCKET_OPCODE_TEXT,
 } from '@src/server'
-import { buildText, createRandom } from '../../setup.js'
+import { buildText, createRandom, requireValue } from '../../setup.js'
 import { frame, randomBuffer } from '../../setupServer.js'
 
 // The RFC 6455 codec as pure units (no socket, AGENTS §16) — asserted against the
@@ -35,6 +38,22 @@ describe('computeWebSocketAccept', () => {
 
 	it('is deterministic for a given key', () => {
 		expect(computeWebSocketAccept('abc')).toBe(computeWebSocketAccept('abc'))
+	})
+})
+
+describe('handshake value guards', () => {
+	it('accepts only canonical 16-byte Sec-WebSocket-Key values', () => {
+		expect(isWebSocketKey('dGhlIHNhbXBsZSBub25jZQ==')).toBe(true)
+		expect(isWebSocketKey('abc')).toBe(false)
+		expect(isWebSocketKey('dGhlIHNhbXBsZSBub25jZQ=')).toBe(false)
+		expect(isWebSocketKey('dGhlIHNhbXBsZSBub25jZQ==\r\n')).toBe(false)
+	})
+
+	it('accepts one HTTP token and rejects separators or header injection', () => {
+		expect(isWebSocketProtocol('mcp.v1')).toBe(true)
+		expect(isWebSocketProtocol('')).toBe(false)
+		expect(isWebSocketProtocol('mcp, other')).toBe(false)
+		expect(isWebSocketProtocol('mcp\r\nX-Injected: true')).toBe(false)
 	})
 })
 
@@ -75,6 +94,24 @@ describe('encodeWebSocketFrame — RFC byte vectors', () => {
 		expect(wire.readUInt32BE(2)).toBe(0)
 		expect(wire.readUInt32BE(6)).toBe(65_536)
 		expect(wire.length).toBe(10 + 65_536)
+	})
+
+	it('rejects opcodes outside the four-bit wire field', () => {
+		expect(() => encodeWebSocketFrame(-1, Buffer.alloc(0))).toThrow(RangeError)
+		expect(() => encodeWebSocketFrame(16, Buffer.alloc(0))).toThrow(RangeError)
+		expect(() => encodeWebSocketFrame(1.5, Buffer.alloc(0))).toThrow(RangeError)
+	})
+
+	it('requires an explicit mask to be exactly four bytes and enabled', () => {
+		expect(() =>
+			encodeWebSocketFrame(WEBSOCKET_OPCODE_TEXT, HELLO, {
+				masked: true,
+				mask: Buffer.alloc(3),
+			}),
+		).toThrow(RangeError)
+		expect(() =>
+			encodeWebSocketFrame(WEBSOCKET_OPCODE_TEXT, HELLO, { mask: Buffer.alloc(4) }),
+		).toThrow(RangeError)
 	})
 })
 
@@ -149,7 +186,7 @@ describe('parseWebSocketFrame — trailing bytes', () => {
 		expect(parsed?.consumed).toBe(first.length)
 
 		// The caller slices `consumed` and re-parses the remainder.
-		const rest = stream.subarray(parsed?.consumed ?? 0)
+		const rest = stream.subarray(requireValue(parsed).consumed)
 		expect(parseWebSocketFrame(rest)?.payload.toString('utf-8')).toBe('two')
 	})
 })
@@ -207,7 +244,7 @@ describe('parseWebSocketFrame — masked / rsv surfaced', () => {
 
 	it('surfaces a non-zero rsv decoded from byte 0 bits 4-6 (>> 4, not >> 3)', () => {
 		const wire = encodeWebSocketFrame(WEBSOCKET_OPCODE_TEXT, HELLO, { masked: true })
-		wire[0] = (wire[0] ?? 0) | 0x70 // set RSV1+RSV2+RSV3
+		wire.writeUInt8(wire.readUInt8(0) | 0x70, 0) // set RSV1+RSV2+RSV3
 		const parsed = parseWebSocketFrame(wire)
 		expect(parsed?.rsv).toBe(7)
 	})
@@ -249,6 +286,38 @@ describe('measureWebSocketFrame', () => {
 	})
 })
 
+describe('isWebSocketFrameCanonical', () => {
+	it('accepts each shortest length form and waits for an incomplete prefix', () => {
+		expect(isWebSocketFrameCanonical(Buffer.from([0x81]))).toBeUndefined()
+		expect(isWebSocketFrameCanonical(Buffer.from([0x81, 125]))).toBe(true)
+		expect(
+			isWebSocketFrameCanonical(encodeWebSocketFrame(WEBSOCKET_OPCODE_BINARY, Buffer.alloc(126))),
+		).toBe(true)
+		expect(
+			isWebSocketFrameCanonical(
+				encodeWebSocketFrame(WEBSOCKET_OPCODE_BINARY, Buffer.alloc(65_536)),
+			),
+		).toBe(true)
+	})
+
+	it('rejects non-minimal extended lengths and a set 64-bit high bit', () => {
+		const nonMinimal16 = Buffer.from([0x81, 126, 0, 125])
+		const nonMinimal64 = Buffer.alloc(10)
+		nonMinimal64.writeUInt8(0x81, 0)
+		nonMinimal64.writeUInt8(127, 1)
+		nonMinimal64.writeUInt32BE(0, 2)
+		nonMinimal64.writeUInt32BE(65_535, 6)
+		const highBit = Buffer.alloc(10)
+		highBit.writeUInt8(0x81, 0)
+		highBit.writeUInt8(127, 1)
+		highBit.writeUInt32BE(0x8000_0000, 2)
+
+		expect(isWebSocketFrameCanonical(nonMinimal16)).toBe(false)
+		expect(isWebSocketFrameCanonical(nonMinimal64)).toBe(false)
+		expect(isWebSocketFrameCanonical(highBit)).toBe(false)
+	})
+})
+
 describe('parseUTF8', () => {
 	it('decodes a valid UTF-8 byte sequence', () => {
 		expect(parseUTF8(Buffer.from('héllo wörld', 'utf-8'))).toBe('héllo wörld')
@@ -284,6 +353,7 @@ describe('isCloseCode', () => {
 		expect(isCloseCode(1006)).toBe(false)
 		expect(isCloseCode(999)).toBe(false)
 		expect(isCloseCode(1004)).toBe(false)
+		expect(isCloseCode(1000.5)).toBe(false)
 	})
 })
 
@@ -309,7 +379,7 @@ function buildCorpus(): readonly Buffer[] {
 	return corpus
 }
 
-describe('A-CODEC — round-trip fuzz over a seeded corpus', () => {
+describe('codec properties — seeded round trips', () => {
 	const corpus = buildCorpus()
 
 	it('round-trips a seeded random corpus at every length form (unmasked)', () => {
@@ -333,7 +403,7 @@ describe('A-CODEC — round-trip fuzz over a seeded corpus', () => {
 	})
 })
 
-describe('A-CODEC — never throws on truncation', () => {
+describe('codec properties — incomplete input', () => {
 	it('never throws on every truncation of a valid frame (returns undefined, never a partial)', () => {
 		const rng = createRandom(3)
 		const wires = [
@@ -349,18 +419,18 @@ describe('A-CODEC — never throws on truncation', () => {
 			// wire (instead of one expect() per offset) so the ~131k-call matcher
 			// overhead doesn't blow the test timeout — full byte-level coverage is
 			// preserved, and a failure still reports the offending offset.
-			let firstThrow = -1
-			let firstDefined = -1
+			let firstThrow: number | undefined
+			let firstDefined: number | undefined
 			for (let cut = 0; cut < wire.length; cut += 1) {
 				try {
 					const result = parseWebSocketFrame(wire.subarray(0, cut))
-					if (result !== undefined && firstDefined === -1) firstDefined = cut
+					if (result !== undefined && firstDefined === undefined) firstDefined = cut
 				} catch {
-					if (firstThrow === -1) firstThrow = cut
+					if (firstThrow === undefined) firstThrow = cut
 				}
 			}
-			expect(firstThrow).toBe(-1)
-			expect(firstDefined).toBe(-1)
+			expect(firstThrow).toBeUndefined()
+			expect(firstDefined).toBeUndefined()
 			// The whole wire parses.
 			expect(parseWebSocketFrame(wire)).toBeDefined()
 		}
@@ -382,7 +452,7 @@ describe('A-CODEC — never throws on truncation', () => {
 	})
 })
 
-describe('A-CODEC — measureWebSocketFrame agrees with parseWebSocketFrame', () => {
+describe('codec properties — measurement and parsing agree', () => {
 	it('measures the declared length across forms and agrees with parse', () => {
 		const rng = createRandom(4)
 		const cases: ReadonlyArray<{ readonly length: number; readonly masked: boolean }> = [
@@ -397,9 +467,9 @@ describe('A-CODEC — measureWebSocketFrame agrees with parseWebSocketFrame', ()
 			const payload = randomBuffer(rng, length)
 			const wire = encodeWebSocketFrame(WEBSOCKET_OPCODE_BINARY, payload, { masked })
 			const measured = measureWebSocketFrame(wire)
-			const parsed = parseWebSocketFrame(wire)
-			expect(measured).toBe(parsed?.payload.length)
-			const headerWidth = (parsed?.consumed ?? 0) - (parsed?.payload.length ?? 0)
+			const parsed = requireValue(parseWebSocketFrame(wire))
+			expect(measured).toBe(parsed.payload.length)
+			const headerWidth = parsed.consumed - parsed.payload.length
 			const expectedWidths = masked ? [6, 8, 14] : [2, 4, 10]
 			expect(expectedWidths).toContain(headerWidth)
 		}
@@ -425,7 +495,7 @@ describe('A-CODEC — measureWebSocketFrame agrees with parseWebSocketFrame', ()
 	})
 })
 
-describe('A-CODEC — mask XOR is an involution', () => {
+describe('codec properties — mask XOR is an involution', () => {
 	it('masking then unmasking with the same key recovers the original bytes', () => {
 		const rng = createRandom(6)
 		for (let index = 0; index < 100; index += 1) {
@@ -440,8 +510,8 @@ describe('A-CODEC — mask XOR is an involution', () => {
 			const once = Buffer.alloc(length)
 			const twice = Buffer.alloc(length)
 			for (let byte = 0; byte < length; byte += 1) {
-				const b = buf[byte] ?? 0
-				const m = mask[byte % 4] ?? 0
+				const b = buf.readUInt8(byte)
+				const m = mask.readUInt8(byte % 4)
 				once[byte] = b ^ m
 				twice[byte] = once[byte] ^ m
 			}
@@ -450,7 +520,7 @@ describe('A-CODEC — mask XOR is an involution', () => {
 	})
 })
 
-describe('A-CODEC — UTF-8 accept / reject', () => {
+describe('codec properties — UTF-8 acceptance', () => {
 	it('decodes a valid UTF-8 corpus (buildText samples + known multibyte) exactly', () => {
 		const rng = createRandom(7)
 		for (let index = 0; index < 20; index += 1) {
@@ -478,7 +548,7 @@ describe('A-CODEC — UTF-8 accept / reject', () => {
 	})
 })
 
-describe('A-CODEC — isCloseCode classifies the full receivable range', () => {
+describe('codec properties — close-code classification', () => {
 	it('classifies every code 999..5000 exactly per RFC 6455 §7.4.1 + the 1012-1014 extension', () => {
 		for (let code = 999; code <= 5000; code += 1) {
 			const expected =

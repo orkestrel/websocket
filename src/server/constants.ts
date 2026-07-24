@@ -25,6 +25,9 @@ export const WEBSOCKET_OPCODE_TEXT = 0x01
 /** Binary frame opcode — a raw byte payload (RFC 6455 §5.6). */
 export const WEBSOCKET_OPCODE_BINARY = 0x02
 
+/** Continuation frame opcode — the next fragment of an open data message (RFC 6455 §5.4). */
+export const WEBSOCKET_OPCODE_CONTINUATION = 0x00
+
 /** Close frame opcode — a control frame ending the connection (RFC 6455 §5.5.1). */
 export const WEBSOCKET_OPCODE_CLOSE = 0x08
 
@@ -72,3 +75,6 @@ export const WEBSOCKET_FAIL_TIMEOUT_MS = 1_000
 
 /** The maximum control-frame payload length in bytes (RFC 6455 §5.5). */
 export const WEBSOCKET_CONTROL_MAXLEN = 125
+
+/** The maximum UTF-8 close-reason length after the two-byte status code. */
+export const WEBSOCKET_CLOSE_REASON_MAXLEN = WEBSOCKET_CONTROL_MAXLEN - 2

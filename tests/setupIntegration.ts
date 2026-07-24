@@ -3,8 +3,8 @@
 // files entirely (they import nothing from `@src/*` or `node:*`). It boots a real
 // `node:http` server, upgrades every request to a server-mode `createNodeWebSocket`
 // (the package's own public factory — the same wiring shown in its TSDoc example), and
-// echoes text frames back as `echo: <text>`; the sentinel text `'close-me'` triggers a
-// server-initiated close instead of an echo. The listening URL is handed to the browser
+// echoes text frames back as `echo: <text>`; a small centralized command vocabulary
+// drives close/count assertions. The listening URL is handed to the browser
 // side via `provide('wsUrl', …)`, read back with `inject('wsUrl')` in the test files.
 
 import type { TestProject } from 'vitest/node'
@@ -13,6 +13,12 @@ import type { Server } from 'node:http'
 import type { Socket } from 'node:net'
 import { createNodeWebSocket } from '@src/server'
 import type { NodeWebSocketInterface } from '@src/server'
+import {
+	INTEGRATION_CLOSE_CUSTOM_REQUEST,
+	INTEGRATION_CLOSE_NORMAL_REQUEST,
+	INTEGRATION_COUNT_PREFIX,
+	INTEGRATION_COUNT_REQUEST,
+} from './setup.js'
 
 declare module 'vitest' {
 	export interface ProvidedContext {
@@ -40,16 +46,16 @@ export async function setup({ provide }: TestProject): Promise<() => Promise<voi
 			head,
 			on: {
 				message: (text) => {
-					if (text === 'close-me') {
+					if (text === INTEGRATION_CLOSE_NORMAL_REQUEST) {
 						ws.close(1000, 'done')
 						return
 					}
-					if (text === 'close-4000') {
+					if (text === INTEGRATION_CLOSE_CUSTOM_REQUEST) {
 						ws.close(4000, 'app-reason')
 						return
 					}
-					if (text === 'count') {
-						ws.send(`count: ${sockets.size}`)
+					if (text === INTEGRATION_COUNT_REQUEST) {
+						ws.send(`${INTEGRATION_COUNT_PREFIX}${sockets.size}`)
 						return
 					}
 					ws.send(`echo: ${text}`)

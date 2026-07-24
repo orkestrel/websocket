@@ -4,7 +4,17 @@
 // the injected `wsUrl` the Node-side `setupIntegration.ts` provides.
 
 import { describe, expect, inject, it } from 'vitest'
-import { buildText, connect, createRandom, nextClose, nextMessage } from '../setup.js'
+import {
+	buildText,
+	connect,
+	createRandom,
+	INTEGRATION_CLOSE_CUSTOM_REQUEST,
+	INTEGRATION_COUNT_PREFIX,
+	INTEGRATION_COUNT_REQUEST,
+	nextClose,
+	nextMessage,
+	requireValue,
+} from '../setup.js'
 
 describe('WebSocket integration — limit & stress battery', () => {
 	it('round-trips a 2 MB text message byte-exact', async () => {
@@ -52,11 +62,12 @@ describe('WebSocket integration — limit & stress battery', () => {
 
 		const final = await connect(inject('wsUrl'))
 		const reply = nextMessage(final)
-		final.send('count')
+		final.send(INTEGRATION_COUNT_REQUEST)
 		const event = await reply
-		const countMatch = /^count: (\d+)$/.exec(String(event.data))
-		expect(countMatch).not.toBeNull()
-		const count = countMatch === null ? Number.NaN : Number(countMatch[1])
+		const countMatch = requireValue(
+			new RegExp(`^${INTEGRATION_COUNT_PREFIX}(\\d+)$`).exec(String(event.data)),
+		)
+		const count = Number(requireValue(countMatch[1]))
 		expect(count).toBeLessThanOrEqual(2)
 		const closed = nextClose(final)
 		final.close()
@@ -85,7 +96,7 @@ describe('WebSocket integration — limit & stress battery', () => {
 	it('observes a server-initiated custom-code close', async () => {
 		const socket = await connect(inject('wsUrl'))
 		const closed = nextClose(socket)
-		socket.send('close-4000')
+		socket.send(INTEGRATION_CLOSE_CUSTOM_REQUEST)
 		const event = await closed
 		expect(event.code).toBe(4000)
 		expect(event.reason).toBe('app-reason')
@@ -101,11 +112,12 @@ describe('WebSocket integration — limit & stress battery', () => {
 
 		const reconnected = await connect(inject('wsUrl'))
 		const reply = nextMessage(reconnected)
-		reconnected.send('count')
+		reconnected.send(INTEGRATION_COUNT_REQUEST)
 		const countEvent = await reply
-		const countMatch = /^count: (\d+)$/.exec(String(countEvent.data))
-		expect(countMatch).not.toBeNull()
-		const count = countMatch === null ? Number.NaN : Number(countMatch[1])
+		const countMatch = requireValue(
+			new RegExp(`^${INTEGRATION_COUNT_PREFIX}(\\d+)$`).exec(String(countEvent.data)),
+		)
+		const count = Number(requireValue(countMatch[1]))
 		expect(count).toBeLessThanOrEqual(2)
 		const reconnectedClosed = nextClose(reconnected)
 		reconnected.close()

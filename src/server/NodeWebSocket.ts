@@ -11,6 +11,9 @@ import {
 	computeWebSocketAccept,
 	encodeWebSocketFrame,
 	isCloseCode,
+	isWebSocketFrameCanonical,
+	isWebSocketKey,
+	isWebSocketProtocol,
 	measureWebSocketFrame,
 	parseUTF8,
 	parseWebSocketFrame,
@@ -19,6 +22,7 @@ import {
 	WEBSOCKET_CLOSE_INVALID,
 	WEBSOCKET_CLOSE_NORMAL,
 	WEBSOCKET_CLOSE_PROTOCOL,
+	WEBSOCKET_CLOSE_REASON_MAXLEN,
 	WEBSOCKET_CLOSE_TIMEOUT_MS,
 	WEBSOCKET_CLOSE_TOOBIG,
 	WEBSOCKET_CLOSE_UNSUPPORTED,
@@ -27,6 +31,7 @@ import {
 	WEBSOCKET_MAX_PAYLOAD,
 	WEBSOCKET_OPCODE_BINARY,
 	WEBSOCKET_OPCODE_CLOSE,
+	WEBSOCKET_OPCODE_CONTINUATION,
 	WEBSOCKET_OPCODE_PING,
 	WEBSOCKET_OPCODE_PONG,
 	WEBSOCKET_OPCODE_TEXT,
@@ -52,27 +57,27 @@ import {
  * socket, emitting `close`. `send` writes a text frame, `ping` a ping, `close` a close
  * frame; `destroy` tears down immediately. It owns a typed `#emitter` (AGENTS §13) that
  * isolates a throwing listener and routes the error to its own `error` handler (the `error`
- * option) — the socket never crashes. The untyped socket `data` is narrowed to a `Buffer`
- * with a guard, never an assertion (AGENTS §14).
+ * option) — the socket never crashes. An underlying socket error emits the domain
+ * `error` event and terminates the wrapper. The untyped socket `data` is narrowed to a
+ * `Buffer` with a guard, never an assertion (AGENTS §14).
  */
 export class NodeWebSocket implements NodeWebSocketInterface {
 	readonly #emitter: Emitter<NodeWebSocketEventMap>
 	readonly #socket: Duplex
-	readonly #protocol: string | undefined
 	readonly #masked: boolean
 	readonly #payload: number
 	readonly #timeout: number
-	readonly #requireMask: boolean
 	readonly #signal: AbortSignal | undefined
 	#buffer: Buffer = Buffer.alloc(0)
 	#readyState: WebSocketReadyState = WEBSOCKET_READY_CONNECTING
-	#code: number | undefined = undefined
-	#reason: string | undefined = undefined
+	#code: number | undefined
+	#reason: string | undefined
 	#fragments: Buffer[] = []
-	#messageOpcode: number | undefined = undefined
+	#messageOpcode: number | undefined
 	#fragmentBytes = 0
-	#closeTimer: ReturnType<typeof setTimeout> | undefined = undefined
+	#closeTimer: ReturnType<typeof setTimeout> | undefined
 	#destroyed = false
+	#detached = false
 
 	// The socket listeners are bound fields so `destroy` can detach exactly these.
 	readonly #onData = (chunk: unknown): void => {
@@ -88,7 +93,11 @@ export class NodeWebSocket implements NodeWebSocketInterface {
 
 	readonly #onError = (error: unknown): void => {
 		this.#emitter.emit('error', error)
+		this.destroy()
 	}
+
+	// Keep a terminal socket safe from late peer errors after the domain listener is gone.
+	readonly #onDetachedError = (): void => undefined
 
 	// Bound so `#finish` / `destroy` can detach exactly this listener from `#signal`.
 	readonly #onAbort = (): void => {
@@ -96,31 +105,44 @@ export class NodeWebSocket implements NodeWebSocketInterface {
 	}
 
 	constructor(options: NodeWebSocketOptions) {
+		const payload = options.payload ?? WEBSOCKET_MAX_PAYLOAD
+		if (!Number.isSafeInteger(payload) || payload < 0) {
+			throw new RangeError('payload must be a non-negative safe integer')
+		}
+		const timeout = options.timeout ?? WEBSOCKET_CLOSE_TIMEOUT_MS
+		if (!Number.isSafeInteger(timeout) || timeout < 0) {
+			throw new RangeError('timeout must be a non-negative safe integer')
+		}
+		if (options.key !== undefined && !isWebSocketKey(options.key)) {
+			throw new RangeError('key must be the canonical base64 encoding of 16 bytes')
+		}
+		if (options.protocol !== undefined && !isWebSocketProtocol(options.protocol)) {
+			throw new RangeError('protocol must be a valid WebSocket subprotocol token')
+		}
+		if (options.protocol !== undefined && options.key === undefined) {
+			throw new RangeError('protocol requires a server key')
+		}
+
 		this.#emitter = new Emitter({ on: options.on, error: options.error })
 		this.#socket = options.socket
-		this.#protocol = options.protocol
 		// Server mode is identified by a client key (it writes the handshake + sends
 		// unmasked frames); without one this is a client (no handshake, masked frames).
 		this.#masked = options.key === undefined
-		this.#payload = options.payload ?? WEBSOCKET_MAX_PAYLOAD
-		this.#timeout = options.timeout ?? WEBSOCKET_CLOSE_TIMEOUT_MS
-		// A server (masked === false, i.e. this instance is unmasked outbound) requires
-		// masked inbound frames from the client (RFC 6455 §5.1); a client instance accepts
-		// unmasked frames from the server.
-		this.#requireMask = !this.#masked
+		this.#payload = payload
+		this.#timeout = timeout
 		this.#signal = options.signal
 
 		if (options.key !== undefined) {
-			const protocol =
-				this.#protocol === undefined ? '' : `Sec-WebSocket-Protocol: ${this.#protocol}\r\n`
-			this.#socket.write(
-				'HTTP/1.1 101 Switching Protocols\r\n' +
-					'Upgrade: websocket\r\n' +
-					'Connection: Upgrade\r\n' +
-					`Sec-WebSocket-Accept: ${computeWebSocketAccept(options.key)}\r\n` +
-					protocol +
-					'\r\n',
-			)
+			const headers = [
+				'HTTP/1.1 101 Switching Protocols',
+				'Upgrade: websocket',
+				'Connection: Upgrade',
+				`Sec-WebSocket-Accept: ${computeWebSocketAccept(options.key)}`,
+			]
+			if (options.protocol !== undefined) {
+				headers.push(`Sec-WebSocket-Protocol: ${options.protocol}`)
+			}
+			this.#socket.write(`${headers.join('\r\n')}\r\n\r\n`)
 		}
 
 		this.#readyState = WEBSOCKET_READY_OPEN
@@ -185,8 +207,11 @@ export class NodeWebSocket implements NodeWebSocketInterface {
 			return
 		}
 		if (code !== undefined && !isCloseCode(code)) throw new RangeError('invalid close code')
-		if (reason !== undefined && Buffer.byteLength(reason, 'utf-8') > 123) {
-			throw new RangeError('close reason exceeds 123 bytes')
+		if (
+			reason !== undefined &&
+			Buffer.byteLength(reason, 'utf-8') > WEBSOCKET_CLOSE_REASON_MAXLEN
+		) {
+			throw new RangeError(`close reason exceeds ${WEBSOCKET_CLOSE_REASON_MAXLEN} bytes`)
 		}
 		this.#readyState = WEBSOCKET_READY_CLOSING
 		this.#code = code ?? WEBSOCKET_CLOSE_NORMAL
@@ -202,9 +227,8 @@ export class NodeWebSocket implements NodeWebSocketInterface {
 	destroy(): void {
 		if (this.#destroyed) return
 		this.#destroyed = true
-		this.#socket.off('data', this.#onData)
-		this.#socket.off('close', this.#onClose)
-		this.#socket.off('error', this.#onError)
+		// Detach before destroy so a destroy-time error reaches the terminal sink.
+		this.#detach()
 		this.#signal?.removeEventListener('abort', this.#onAbort)
 		// `#finish` no-ops once already CLOSED (e.g. after `#fail` armed the hard-teardown
 		// fallback), so the timer is cleared here unconditionally rather than relying on it.
@@ -219,6 +243,16 @@ export class NodeWebSocket implements NodeWebSocketInterface {
 	// it off; stops when a partial frame remains (parse returns `undefined`).
 	#drain(): void {
 		for (;;) {
+			const canonical = isWebSocketFrameCanonical(this.#buffer)
+			if (canonical === false) {
+				this.#fail(WEBSOCKET_CLOSE_PROTOCOL)
+				return
+			}
+			const declared = measureWebSocketFrame(this.#buffer)
+			if (declared !== undefined && declared > this.#payload) {
+				this.#fail(WEBSOCKET_CLOSE_TOOBIG)
+				return
+			}
 			const frame = parseWebSocketFrame(this.#buffer)
 			if (frame === undefined) return
 			this.#buffer = this.#buffer.subarray(frame.consumed)
@@ -235,7 +269,8 @@ export class NodeWebSocket implements NodeWebSocketInterface {
 			this.#fail(WEBSOCKET_CLOSE_PROTOCOL)
 			return
 		}
-		if (masked !== this.#requireMask) {
+		// Server mode sends unmasked and requires masked input; client mode is the inverse.
+		if (masked === this.#masked) {
 			this.#fail(WEBSOCKET_CLOSE_PROTOCOL)
 			return
 		}
@@ -268,7 +303,7 @@ export class NodeWebSocket implements NodeWebSocketInterface {
 				return
 			}
 			this.#messageOpcode = opcode
-		} else if (opcode === 0x00) {
+		} else if (opcode === WEBSOCKET_OPCODE_CONTINUATION) {
 			if (this.#messageOpcode === undefined) {
 				this.#fail(WEBSOCKET_CLOSE_PROTOCOL)
 				return
@@ -312,19 +347,14 @@ export class NodeWebSocket implements NodeWebSocketInterface {
 			this.#readyState = WEBSOCKET_READY_CLOSING
 			this.#write(WEBSOCKET_OPCODE_CLOSE, payload)
 		}
+		// The echo is queued; detach before `end()` can surface a socket error.
+		this.#detach()
 		this.#socket.end()
-		// Detach the socket listeners here, mirroring `#fail` — the echo write above has
-		// already gone out, so this cannot drop it, but it prevents a socket `error` fired
-		// during the post-close `end()` flush from surfacing AFTER the terminal `close`
-		// (the same asymmetry `#fail` guards against).
-		this.#socket.off('data', this.#onData)
-		this.#socket.off('close', this.#onClose)
-		this.#socket.off('error', this.#onError)
 		this.#finish()
 	}
 
-	// The single funnel for every RFC 6455 validation breach: close with `code`, DETACH
-	// the socket listeners (the connection is protocol-dead — RFC 6455 permits discarding
+	// The single funnel for every RFC 6455 validation breach: close with `code`, `#detach`
+	// the domain listeners (the connection is protocol-dead — RFC 6455 permits discarding
 	// further input after sending close, and this also stops a post-fail socket `error`
 	// emitting AFTER the terminal `close` event), write the close frame, then flush + half
 	// -close via `end()` (never a synchronous `destroy()`, which can discard the buffered
@@ -342,9 +372,7 @@ export class NodeWebSocket implements NodeWebSocketInterface {
 		this.#code = code
 		this.#reason = reason
 		this.#readyState = WEBSOCKET_READY_CLOSING
-		this.#socket.off('data', this.#onData)
-		this.#socket.off('close', this.#onClose)
-		this.#socket.off('error', this.#onError)
+		this.#detach()
 		this.#write(WEBSOCKET_OPCODE_CLOSE, this.#encodeClose(code, reason))
 		this.#socket.end(() => {
 			if (!this.#socket.destroyed) this.#socket.destroy()
@@ -362,6 +390,16 @@ export class NodeWebSocket implements NodeWebSocketInterface {
 			if (!this.#socket.destroyed) this.#socket.destroy()
 		}, WEBSOCKET_FAIL_TIMEOUT_MS)
 		this.#closeTimer.unref()
+	}
+
+	// Drop only this wrapper's domain listeners and arm one durable terminal error sink.
+	#detach(): void {
+		if (this.#detached) return
+		this.#detached = true
+		this.#socket.off('data', this.#onData)
+		this.#socket.off('close', this.#onClose)
+		this.#socket.off('error', this.#onError)
+		this.#socket.on('error', this.#onDetachedError)
 	}
 
 	// Write one frame to the socket — masked in client mode, unmasked in server mode.
@@ -402,7 +440,12 @@ export class NodeWebSocket implements NodeWebSocketInterface {
 			this.#fail(WEBSOCKET_CLOSE_PROTOCOL)
 			return false
 		}
-		const reason = payload.length > 2 ? parseUTF8(payload.subarray(2)) : ''
+		if (payload.length === 2) {
+			this.#code = code
+			this.#reason = undefined
+			return true
+		}
+		const reason = parseUTF8(payload.subarray(2))
 		if (reason === undefined) {
 			this.#fail(WEBSOCKET_CLOSE_INVALID)
 			return false
@@ -416,6 +459,7 @@ export class NodeWebSocket implements NodeWebSocketInterface {
 	// the final `close` with the last known code/reason.
 	#finish(): void {
 		if (this.#readyState === WEBSOCKET_READY_CLOSED) return
+		this.#detach()
 		clearTimeout(this.#closeTimer)
 		this.#closeTimer = undefined
 		this.#signal?.removeEventListener('abort', this.#onAbort)
@@ -423,17 +467,11 @@ export class NodeWebSocket implements NodeWebSocketInterface {
 		this.#emitter.emit('close', this.#code, this.#reason)
 	}
 
-	// Append `bytes` to the accumulation buffer, then reject an over-cap frame the moment
-	// its declared length is known — before its payload is even buffered — else drain
-	// every complete frame. Shared by `#onData` AND the constructor's head-replay so the
-	// pre-buffer cap check applies uniformly on both ingest paths (AGENTS §5 dedup).
+	// Append `bytes` to the accumulation buffer, then drain every complete frame. `#drain`
+	// preflights canonical encoding and the declared payload cap on EACH iteration, so
+	// every coalesced frame receives the same validation. Shared by `#onData` and head replay.
 	#ingest(bytes: Buffer): void {
 		this.#buffer = Buffer.concat([this.#buffer, bytes])
-		const declared = measureWebSocketFrame(this.#buffer)
-		if (declared !== undefined && declared > this.#payload) {
-			this.#fail(WEBSOCKET_CLOSE_TOOBIG)
-			return
-		}
 		this.#drain()
 	}
 

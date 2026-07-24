@@ -279,6 +279,8 @@ There is no parent class or interface providing context. The helper name is the 
 - Methods are **verbs** — `abort`, not `aborter`.
 - Booleans read as **assertions** — `aborted`, `exhausted`, `expired`.
 - A **binary behavioral toggle is a boolean**, not a two-value union — `bail`, not `failure: 'continue' | 'halt'`. The test is whether it _switches behavior_: discriminated-union tags (§4.5), multi-value / lifecycle unions (§10), conventional value pairs (`ascending`/`descending`, `and`/`or`), and external-spec literals are **not** toggles — they stay unions.
+- **Absence is `undefined`, never a sentinel value.** Do not invent `'none'`, `'unset'`, `'unknown'`, `''`, `-1`, or a similar magic value to mean that state or data is missing. `null` remains valid only when an external protocol or data format distinguishes it from omission. Optional state is `T | undefined`; a lookup that finds nothing returns `undefined`.
+- **Derive state instead of naming it twice.** If a fact follows from existing fields, expose a getter or compute it at the use site; do not add a second string flag that can drift. A genuinely binary fact is a boolean (or `boolean | undefined` when the fact itself is absent until an entity/session exists). A literal union is reserved for an irreducible set of real domain modes, lifecycle phases, discriminants, or external-spec values — never as a decorative label for a condition already represented elsewhere.
 - No `get`/`set` prefixes — accessors use bare nouns.
 - Identical verbs across the project mean identical things — see Lifecycle Vocabulary (§10).
 - A **discriminant is named for the axis it splits on**, never `kind` — `relationship`, `command`, `category` say what varies; `kind`/`type` say nothing.

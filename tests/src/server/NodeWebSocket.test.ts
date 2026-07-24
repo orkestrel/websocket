@@ -10,6 +10,7 @@ import {
 	WEBSOCKET_CLOSE_UNSUPPORTED,
 	WEBSOCKET_OPCODE_BINARY,
 	WEBSOCKET_OPCODE_CLOSE,
+	WEBSOCKET_OPCODE_CONTINUATION,
 	WEBSOCKET_OPCODE_PING,
 	WEBSOCKET_OPCODE_PONG,
 	WEBSOCKET_OPCODE_TEXT,
@@ -82,6 +83,54 @@ describe('NodeWebSocket — handshake', () => {
 	})
 })
 
+describe('NodeWebSocket — option validation', () => {
+	it('rejects malformed handshake values before writing to or assuming ownership of the socket', async () => {
+		for (const options of [
+			{ key: 'not-base64' },
+			{ key: CLIENT_KEY, protocol: 'mcp\r\nX-Injected: true' },
+		]) {
+			const [server, client] = duplexPair()
+			const received: Buffer[] = []
+			client.on('data', (chunk: Buffer) => received.push(chunk))
+
+			expect(() => createNodeWebSocket({ socket: server, ...options })).toThrow(RangeError)
+			await flushSocket()
+
+			expect(received).toEqual([])
+			expect(getEventListeners(server, 'data')).toHaveLength(0)
+			expect(getEventListeners(server, 'close')).toHaveLength(0)
+			expect(getEventListeners(server, 'error')).toHaveLength(0)
+			server.destroy()
+			client.destroy()
+		}
+	})
+
+	it('rejects a subprotocol in client mode because no server handshake can carry it', () => {
+		const [socket, peer] = duplexPair()
+		expect(() => createNodeWebSocket({ socket, protocol: 'mcp' })).toThrow(RangeError)
+		socket.destroy()
+		peer.destroy()
+	})
+
+	it('rejects invalid payload and timeout limits before attaching socket listeners', () => {
+		for (const options of [
+			{ payload: -1 },
+			{ payload: 1.5 },
+			{ payload: Number.POSITIVE_INFINITY },
+			{ timeout: -1 },
+			{ timeout: 1.5 },
+		]) {
+			const [socket, peer] = duplexPair()
+			expect(() => createNodeWebSocket({ socket, ...options })).toThrow(RangeError)
+			expect(getEventListeners(socket, 'data')).toHaveLength(0)
+			expect(getEventListeners(socket, 'close')).toHaveLength(0)
+			expect(getEventListeners(socket, 'error')).toHaveLength(0)
+			socket.destroy()
+			peer.destroy()
+		}
+	})
+})
+
 describe('NodeWebSocket — receiving', () => {
 	it('decodes a masked client text frame into a message event', async () => {
 		const [server, client] = duplexPair()
@@ -111,11 +160,8 @@ describe('NodeWebSocket — receiving', () => {
 		})
 		await flushSocket()
 
-		// Fragment 1: text opcode, FIN cleared. Fragment 2: continuation opcode (0x00), FIN set.
-		// Build the masked frames by hand-clearing the FIN bit on the first.
-		const first = encodeWebSocketFrame(WEBSOCKET_OPCODE_TEXT, 'Hel', { masked: true })
-		first[0] = (first[0] ?? 0) & 0x7f // clear FIN
-		const second = encodeWebSocketFrame(0x00, 'lo!', { masked: true }) // continuation, FIN set
+		const first = frame(WEBSOCKET_OPCODE_TEXT, 'Hel', { masked: true, fin: false })
+		const second = frame(WEBSOCKET_OPCODE_CONTINUATION, 'lo!', { masked: true })
 		client.write(Buffer.concat([first, second]))
 		await flushSocket()
 
@@ -261,6 +307,19 @@ describe('NodeWebSocket — close', () => {
 		ws.destroy()
 		expect(ws.readyState).toBe(3)
 	})
+
+	it('rejects invalid outbound control payloads without changing the open state', async () => {
+		const [server] = duplexPair()
+		const ws = createNodeWebSocket({ socket: server, key: CLIENT_KEY })
+		await flushSocket()
+
+		expect(() => ws.ping('a'.repeat(126))).toThrow(RangeError)
+		expect(() => ws.close(1000.5)).toThrow(RangeError)
+		expect(() => ws.close(WEBSOCKET_CLOSE_NORMAL, 'a'.repeat(124))).toThrow(RangeError)
+		expect(ws.readyState).toBe(1)
+
+		ws.destroy()
+	})
 })
 
 describe('NodeWebSocket — §13 observer-error isolation', () => {
@@ -340,12 +399,41 @@ describe('NodeWebSocket — breach matrix', () => {
 		await flushSocket()
 
 		const wire = encodeWebSocketFrame(WEBSOCKET_OPCODE_TEXT, 'rsv', { masked: true })
-		wire[0] = (wire[0] ?? 0) | 0x10 // set RSV1
+		wire.writeUInt8(wire.readUInt8(0) | 0x10, 0) // set RSV1
 		client.write(wire)
 		await flushSocket()
 
 		expect(closes).toEqual([WEBSOCKET_CLOSE_PROTOCOL])
 		expect(ws.readyState).toBe(3)
+	})
+
+	it('non-canonical extended lengths close with 1002 as soon as the prefix is complete', async () => {
+		const nonMinimal16 = Buffer.from([0x81, 0xfe, 0, 1])
+		const nonMinimal64 = Buffer.alloc(10)
+		nonMinimal64.writeUInt8(0x81, 0)
+		nonMinimal64.writeUInt8(0xff, 1)
+		nonMinimal64.writeBigUInt64BE(BigInt(125), 2)
+		const highBit64 = Buffer.alloc(10)
+		highBit64.writeUInt8(0x81, 0)
+		highBit64.writeUInt8(0xff, 1)
+		highBit64.writeUInt32BE(0x8000_0000, 2)
+
+		for (const wire of [nonMinimal16, nonMinimal64, highBit64]) {
+			const [server, client] = duplexPair()
+			const closes: (number | undefined)[] = []
+			const ws = createNodeWebSocket({
+				socket: server,
+				key: CLIENT_KEY,
+				on: { close: (code) => closes.push(code) },
+			})
+			await flushSocket()
+
+			client.write(wire)
+			await flushSocket()
+
+			expect(closes).toEqual([WEBSOCKET_CLOSE_PROTOCOL])
+			expect(ws.readyState).toBe(3)
+		}
 	})
 
 	it('a control frame payload over 125 bytes closes with 1002 (protocol error)', async () => {
@@ -376,7 +464,7 @@ describe('NodeWebSocket — breach matrix', () => {
 		await flushSocket()
 
 		const wire = encodeWebSocketFrame(WEBSOCKET_OPCODE_PING, Buffer.alloc(0), { masked: true })
-		wire[0] = (wire[0] ?? 0) & 0x7f // clear FIN — controls MUST NOT fragment (§5.5)
+		wire.writeUInt8(wire.readUInt8(0) & 0x7f, 0) // controls MUST NOT fragment (§5.5)
 		client.write(wire)
 		await flushSocket()
 
@@ -394,7 +482,11 @@ describe('NodeWebSocket — breach matrix', () => {
 		})
 		await flushSocket()
 
-		client.write(encodeWebSocketFrame(0x00, 'stray continuation', { masked: true }))
+		client.write(
+			encodeWebSocketFrame(WEBSOCKET_OPCODE_CONTINUATION, 'stray continuation', {
+				masked: true,
+			}),
+		)
 		await flushSocket()
 
 		expect(closes).toEqual([WEBSOCKET_CLOSE_PROTOCOL])
@@ -413,8 +505,7 @@ describe('NodeWebSocket — breach matrix', () => {
 
 		// Start a message (FIN cleared), then send ANOTHER data frame (not a continuation)
 		// before it finishes — RFC 6455 §5.4 forbids interleaving a second data frame.
-		const start = encodeWebSocketFrame(WEBSOCKET_OPCODE_TEXT, 'first', { masked: true })
-		start[0] = (start[0] ?? 0) & 0x7f
+		const start = frame(WEBSOCKET_OPCODE_TEXT, 'first', { masked: true, fin: false })
 		client.write(start)
 		await flushSocket()
 		client.write(encodeWebSocketFrame(WEBSOCKET_OPCODE_TEXT, 'second', { masked: true }))
@@ -546,6 +637,33 @@ describe('NodeWebSocket — breach matrix', () => {
 		expect(close?.payload.readUInt16BE(0)).toBe(WEBSOCKET_CLOSE_TOOBIG)
 	})
 
+	it('preflights every coalesced frame before buffering its payload', async () => {
+		const [server, client] = duplexPair()
+		const messages: string[] = []
+		const closes: (number | undefined)[] = []
+		const ws = createNodeWebSocket({
+			socket: server,
+			key: CLIENT_KEY,
+			payload: 10,
+			on: {
+				message: (message) => messages.push(message),
+				close: (code) => closes.push(code),
+			},
+		})
+		await flushSocket()
+
+		const first = frame(WEBSOCKET_OPCODE_TEXT, 'ok', { masked: true })
+		const secondHeader = Buffer.alloc(6)
+		secondHeader.writeUInt8(0x81, 0)
+		secondHeader.writeUInt8(0x80 | 20, 1)
+		client.write(Buffer.concat([first, secondHeader]))
+		await flushSocket()
+
+		expect(messages).toEqual(['ok'])
+		expect(closes).toEqual([WEBSOCKET_CLOSE_TOOBIG])
+		expect(ws.readyState).toBe(3)
+	})
+
 	it('a fragmented message whose reassembled total exceeds the payload cap closes with 1009 (message too big)', async () => {
 		const [server, client] = duplexPair()
 		const closes: (number | undefined)[] = []
@@ -558,15 +676,19 @@ describe('NodeWebSocket — breach matrix', () => {
 		await flushSocket()
 
 		// Each fragment is within the single-frame cap; the reassembled total (12) is not.
-		const first = encodeWebSocketFrame(WEBSOCKET_OPCODE_TEXT, Buffer.alloc(6, 0x61), {
+		const first = frame(WEBSOCKET_OPCODE_TEXT, Buffer.alloc(6, 0x61), {
 			masked: true,
+			fin: false,
 		})
-		first[0] = (first[0] ?? 0) & 0x7f // clear FIN
 		client.write(first)
 		await flushSocket()
 		expect(ws.readyState).toBe(1) // still open after the first, under-cap fragment
 
-		client.write(encodeWebSocketFrame(0x00, Buffer.alloc(6, 0x62), { masked: true }))
+		client.write(
+			encodeWebSocketFrame(WEBSOCKET_OPCODE_CONTINUATION, Buffer.alloc(6, 0x62), {
+				masked: true,
+			}),
+		)
 		await flushSocket()
 
 		expect(closes).toEqual([WEBSOCKET_CLOSE_TOOBIG])
@@ -587,20 +709,19 @@ describe('NodeWebSocket — breach matrix', () => {
 		ws.close(WEBSOCKET_CLOSE_NORMAL, 'no echo')
 		expect(ws.readyState).toBe(2) // closing — waiting on the peer's echo
 
-		// No peer echo arrives; wait past the injected close-handshake timeout for the
-		// timer to fire `destroy()`. A local, single-use wait (no setup-file edit in scope).
-		await new Promise<void>((resolve) => setTimeout(resolve, 50))
+		// No peer echo arrives; wait past the injected close-handshake timeout.
+		await waitForDelay(50)
 
 		expect(closes).toEqual([WEBSOCKET_CLOSE_NORMAL])
 		expect(ws.readyState).toBe(3)
 	})
 })
 
-// FIX 2 — the head-replay ingest path shares `#ingest` with `#onData`, so the pre-buffer
+// Head replay shares `#ingest` with ordinary socket data, so the pre-buffer
 // cap check (measure the declared length BEFORE buffering the payload) applies uniformly
 // whether the over-cap bytes arrive as ordinary `data` OR bundled as `options.head` (bytes
 // already read off the socket before the upgrade handler ran).
-describe('NodeWebSocket — head-replay cap parity (FIX 2)', () => {
+describe('NodeWebSocket — head-replay cap parity', () => {
 	it('an over-cap frame delivered entirely via options.head closes 1009 without buffering the payload', async () => {
 		const [server] = duplexPair()
 		const closes: (number | undefined)[] = []
@@ -639,10 +760,10 @@ describe('NodeWebSocket — head-replay cap parity (FIX 2)', () => {
 	})
 })
 
-// FIX 5 — the AbortSignal cancellation seam: composes with `@orkestrel/abort` /
+// The AbortSignal cancellation seam composes with `@orkestrel/abort` /
 // `@orkestrel/timeout`'s native AbortSignals, and never leaks an `abort` listener past
 // the socket's lifecycle.
-describe('NodeWebSocket — AbortSignal seam (FIX 5)', () => {
+describe('NodeWebSocket — AbortSignal lifecycle', () => {
 	it('an abort mid-open tears the socket down: readyState CLOSED, close emitted, socket destroyed', async () => {
 		const [server] = duplexPair()
 		const controller = new AbortController()
@@ -694,7 +815,7 @@ describe('NodeWebSocket — AbortSignal seam (FIX 5)', () => {
 		expect(controller.signal.aborted).toBe(false)
 	})
 
-	// FIX A regression — a \`head\` that itself terminates the socket during construction
+	// A \`head\` that itself terminates the socket during construction
 	// (before the abort seam runs) must not leave a leaked \`abort\` listener on the signal.
 	// The head-replay \`#ingest\` runs BEFORE the seam is wired, so a complete CLOSE frame (or
 	// an RFC violation) in \`head\` can synchronously drive \`#close\`/\`#fail\` -> \`#finish\` ->
@@ -739,12 +860,31 @@ describe('NodeWebSocket — AbortSignal seam (FIX 5)', () => {
 	})
 })
 
-// FIX B — the clean peer-close path (\`#close\`) now detaches the socket listeners on the
-// same terminal step \`#fail\` does, so a socket \`error\` fired during the post-close \`end()\`
-// flush cannot surface AFTER the terminal \`close\` — the exact asymmetry \`#fail\` guarded
-// against but \`#close\` previously did not.
-describe('NodeWebSocket — clean-close listener symmetry (FIX B)', () => {
-	it('a socket error after a clean peer close never surfaces after the terminal close event', async () => {
+describe('NodeWebSocket — terminal socket listeners', () => {
+	it('emits an active socket error once and terminates the WebSocket', () => {
+		const [server] = duplexPair()
+		const events: (string | unknown)[] = []
+		const ws = createNodeWebSocket({
+			socket: server,
+			key: CLIENT_KEY,
+			on: {
+				error: (error) => events.push(error),
+				close: () => events.push('close'),
+			},
+		})
+		const error = new Error('socket fault')
+
+		server.emit('error', error)
+
+		expect(events).toEqual([error, 'close'])
+		expect(ws.readyState).toBe(3)
+		expect(server.destroyed).toBe(true)
+		expect(getEventListeners(server, 'data')).toHaveLength(0)
+		expect(getEventListeners(server, 'close')).toHaveLength(0)
+		expect(getEventListeners(server, 'error')).toHaveLength(1)
+	})
+
+	it('detaches domain listeners after a clean peer close and absorbs late socket errors', async () => {
 		const [server, client] = duplexPair()
 		const events: string[] = []
 		const ws = createNodeWebSocket({
@@ -765,20 +905,90 @@ describe('NodeWebSocket — clean-close listener symmetry (FIX B)', () => {
 
 		expect(events).toEqual(['close'])
 		expect(ws.readyState).toBe(3) // closed
+		expect(getEventListeners(server, 'data')).toHaveLength(0)
+		expect(getEventListeners(server, 'close')).toHaveLength(0)
+		expect(getEventListeners(server, 'error')).toHaveLength(1)
 
-		// A late socket error (e.g. during the post-close end() flush) must not reach the
-		// domain error event now that #close detaches #onError on the terminal step.
-		server.emit('error', new Error('late socket error'))
+		expect(() => server.emit('error', new Error('late socket error'))).not.toThrow()
 
 		expect(events).toEqual(['close'])
 	})
+
+	it('absorbs a late ECONNRESET after destroy on a socket with no harness error sink', () => {
+		const [server] = duplexPair()
+		const events: string[] = []
+		const ws = createNodeWebSocket({
+			socket: server,
+			key: CLIENT_KEY,
+			on: {
+				close: () => events.push('close'),
+				error: () => events.push('error'),
+			},
+		})
+
+		ws.destroy()
+		expect(events).toEqual(['close'])
+		expect(getEventListeners(server, 'data')).toHaveLength(0)
+		expect(getEventListeners(server, 'close')).toHaveLength(0)
+		expect(getEventListeners(server, 'error')).toHaveLength(1)
+
+		const late = new Error('read ECONNRESET')
+		Object.assign(late, { code: 'ECONNRESET' })
+		expect(() => server.emit('error', late)).not.toThrow()
+		expect(events).toEqual(['close'])
+	})
+
+	it('detaches after the underlying socket closes without a WebSocket close frame', async () => {
+		const [server] = duplexPair()
+		const events: string[] = []
+		const ws = createNodeWebSocket({
+			socket: server,
+			key: CLIENT_KEY,
+			on: {
+				close: () => events.push('close'),
+				error: () => events.push('error'),
+			},
+		})
+
+		server.destroy()
+		await flushSocket()
+
+		expect(ws.readyState).toBe(3) // closed
+		expect(events).toEqual(['close'])
+		expect(getEventListeners(server, 'data')).toHaveLength(0)
+		expect(getEventListeners(server, 'close')).toHaveLength(0)
+		expect(getEventListeners(server, 'error')).toHaveLength(1)
+		expect(() => server.emit('error', new Error('late socket error'))).not.toThrow()
+		expect(events).toEqual(['close'])
+	})
+
+	it('preserves caller-owned error listeners while removing the domain listener', () => {
+		const [server] = duplexPair()
+		const callerErrors: unknown[] = []
+		const domainErrors: unknown[] = []
+		server.on('error', (error) => callerErrors.push(error))
+		const ws = createNodeWebSocket({
+			socket: server,
+			key: CLIENT_KEY,
+			on: { error: (error) => domainErrors.push(error) },
+		})
+
+		ws.destroy()
+		expect(getEventListeners(server, 'error')).toHaveLength(2)
+
+		const late = new Error('late socket error')
+		server.emit('error', late)
+
+		expect(callerErrors).toEqual([late])
+		expect(domainErrors).toEqual([])
+	})
 })
 
-// B-ENGINE — reassembly, ping/pong interleaving, cap boundaries, close symmetry, and
+// Reassembly, ping/pong interleaving, cap boundaries, close symmetry, and
 // listener-leak hygiene, all driven end to end over the shared `duplexPair` harness
 // (AGENTS §16.1). Each case is a REAL socket exchange — no mock — asserting the
 // engine's observable contract (message content, wire frames, readyState).
-describe('NodeWebSocket — B-ENGINE reassembly', () => {
+describe('NodeWebSocket — stream reassembly and lifecycle', () => {
 	it('reassembles a message delivered one byte at a time', async () => {
 		const [server, client] = duplexPair()
 		const messages: string[] = []
@@ -855,9 +1065,9 @@ describe('NodeWebSocket — B-ENGINE reassembly', () => {
 
 		const frames: Buffer[] = [frame(WEBSOCKET_OPCODE_TEXT, 'a', { masked: true, fin: false })]
 		for (let index = 0; index < 49; index += 1) {
-			frames.push(frame(0x00, 'a', { masked: true, fin: false }))
+			frames.push(frame(WEBSOCKET_OPCODE_CONTINUATION, 'a', { masked: true, fin: false }))
 		}
-		frames.push(frame(0x00, 'a', { masked: true, fin: true }))
+		frames.push(frame(WEBSOCKET_OPCODE_CONTINUATION, 'a', { masked: true, fin: true }))
 		client.write(Buffer.concat(frames))
 		await flushSocket()
 
@@ -882,7 +1092,7 @@ describe('NodeWebSocket — B-ENGINE reassembly', () => {
 
 		const start = frame(WEBSOCKET_OPCODE_TEXT, 'Hel', { masked: true, fin: false })
 		const ping = frame(WEBSOCKET_OPCODE_PING, Buffer.alloc(4, 0x01), { masked: true, fin: true })
-		const cont = frame(0x00, 'lo!', { masked: true, fin: true })
+		const cont = frame(WEBSOCKET_OPCODE_CONTINUATION, 'lo!', { masked: true, fin: true })
 		client.write(Buffer.concat([start, ping, cont]))
 		await flushSocket()
 
@@ -904,7 +1114,10 @@ describe('NodeWebSocket — B-ENGINE reassembly', () => {
 		await flushSocket()
 
 		const first = frame(WEBSOCKET_OPCODE_TEXT, Buffer.alloc(60, 0x61), { masked: true, fin: false })
-		const second = frame(0x00, Buffer.alloc(40, 0x62), { masked: true, fin: true })
+		const second = frame(WEBSOCKET_OPCODE_CONTINUATION, Buffer.alloc(40, 0x62), {
+			masked: true,
+			fin: true,
+		})
 		client.write(Buffer.concat([first, second]))
 		await flushSocket()
 
@@ -926,7 +1139,10 @@ describe('NodeWebSocket — B-ENGINE reassembly', () => {
 		await flushSocket()
 
 		const first = frame(WEBSOCKET_OPCODE_TEXT, Buffer.alloc(60, 0x61), { masked: true, fin: false })
-		const second = frame(0x00, Buffer.alloc(41, 0x62), { masked: true, fin: true })
+		const second = frame(WEBSOCKET_OPCODE_CONTINUATION, Buffer.alloc(41, 0x62), {
+			masked: true,
+			fin: true,
+		})
 		client.write(Buffer.concat([first, second]))
 		await flushSocket()
 
@@ -1068,10 +1284,6 @@ describe('NodeWebSocket — B-ENGINE reassembly', () => {
 			expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0)
 			expect(getEventListeners(server, 'data')).toHaveLength(0)
 			expect(getEventListeners(server, 'close')).toHaveLength(0)
-			// `duplexPair()` itself attaches a permanent no-op `error` listener to `server` as
-			// a safety net (independent of NodeWebSocket) — so the baseline is 1, not 0; the
-			// wrapper's OWN `#onError` is what must be gone, i.e. the count must not exceed
-			// that fixed harness baseline.
 			expect(getEventListeners(server, 'error')).toHaveLength(1)
 		}
 		expect(controller.signal.aborted).toBe(false)
@@ -1108,11 +1320,11 @@ describe('NodeWebSocket — B-ENGINE reassembly', () => {
 	})
 })
 
-// C-LIMITS — adversarial payload-cap enforcement: fragmentation bombs, header-only
+// Adversarial payload-cap enforcement: fragmentation bombs, header-only
 // declared-huge frames, the intentionally-unbounded stalled-partial-frame case, and
 // one-close-per-many-violations. Injected small `payload` caps keep every case cheap
 // (no large buffer allocation).
-describe('NodeWebSocket — C-LIMITS', () => {
+describe('NodeWebSocket — resource limits', () => {
 	it('bounds a fragmentation bomb to 1009 without OOM', async () => {
 		const [server, client] = duplexPair()
 		const closes: (number | undefined)[] = []
@@ -1130,7 +1342,12 @@ describe('NodeWebSocket — C-LIMITS', () => {
 			frame(WEBSOCKET_OPCODE_TEXT, randomBuffer(rng, 1), { masked: true, fin: false }),
 		]
 		for (let index = 0; index < 199; index += 1) {
-			frames.push(frame(0x00, randomBuffer(rng, 1), { masked: true, fin: false }))
+			frames.push(
+				frame(WEBSOCKET_OPCODE_CONTINUATION, randomBuffer(rng, 1), {
+					masked: true,
+					fin: false,
+				}),
+			)
 		}
 		client.write(Buffer.concat(frames))
 		await flushSocket()

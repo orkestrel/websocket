@@ -1,6 +1,6 @@
 {
 	"name": "@orkestrel/websocket",
-	"version": "0.0.3",
+	"version": "0.0.5",
 	"description": "A dependency-light RFC 6455 WebSocket for Node — native handshake and framing over duplex streams, with a typed emitter surface. Part of the @orkestrel line.",
 	"keywords": [
 		"node",
@@ -53,9 +53,10 @@
 		"format": "oxfmt --config .oxfmtrc.json --write .",
 		"format:check": "oxfmt --config .oxfmtrc.json --check .",
 		"lint:check": "oxlint --config .oxlintrc.json .",
-		"test": "npm run test:src && npm run test:guides",
+		"test": "npm run test:src && npm run test:integration && npm run test:guides",
 		"test:src": "vitest run --config vite.config.ts --no-cache --reporter=dot --project src:server",
 		"test:src:server": "vitest run --config vite.config.ts --no-cache --reporter=dot --project src:server",
+		"test:integration": "vitest run --config vite.config.ts --no-cache --reporter=dot --project integration",
 		"test:guides": "vitest run --config vite.config.ts --reporter=dot --project guides",
 		"build": "npm run clean && npm run build:src",
 		"build:src": "npm run build:src:server",
@@ -66,13 +67,13 @@
 		"@orkestrel/emitter": "^0.0.3"
 	},
 	"devDependencies": {
-		"@microsoft/api-extractor": "^7.58.11",
+		"@microsoft/api-extractor": "^7.58.12",
 		"@orkestrel/guide": "^0.0.5",
 		"@orkestrel/scaffold": "^0.0.2",
 		"@types/node": "^26.1.1",
 		"@vitest/browser-playwright": "^4.1.10",
-		"oxfmt": "^0.59.0",
-		"oxlint": "^1.74.0",
+		"oxfmt": "^0.60.0",
+		"oxlint": "^1.75.0",
 		"typescript": "^6.0.3",
 		"vite": "^8.1.5",
 		"vite-plugin-dts": "^5.0.3",

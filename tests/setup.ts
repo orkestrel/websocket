@@ -89,6 +89,26 @@ export function waitForDelay(ms = 0): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+/**
+ * Return a required test value after narrowing away absence.
+ *
+ * @param value - The value an earlier assertion or fixture lookup expects to exist
+ * @returns The present value
+ * @throws When `value` is absent
+ */
+export function requireValue<T>(value: T | null | undefined): T {
+	if (value === undefined || value === null) throw new Error('Expected test value to exist')
+	return value
+}
+
+// The small command vocabulary used by the real-browser integration fixture. These
+// strings are protocol data, so they are centralized rather than repeated as
+// behavior-selecting literals across the Node server and browser tests.
+export const INTEGRATION_CLOSE_NORMAL_REQUEST = 'close-me'
+export const INTEGRATION_CLOSE_CUSTOM_REQUEST = 'close-4000'
+export const INTEGRATION_COUNT_REQUEST = 'count'
+export const INTEGRATION_COUNT_PREFIX = 'count: '
+
 // ── Browser WebSocket helpers (pure — WebSocket + Promise only) ──────────────
 //
 // AGENTS §16.1: the integration project loads `setup.ts` into its headless-Chromium
