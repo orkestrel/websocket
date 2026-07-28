@@ -67,10 +67,7 @@ export function frame(
 	payload: Buffer | string,
 	options?: TestFrameOptions,
 ): Buffer {
-	const wire = encodeWebSocketFrame(opcode, payload, {
-		masked: options?.masked,
-		mask: options?.mask,
-	})
+	const wire = encodeWebSocketFrame(opcode, payload, options)
 	if (options?.fin === false) {
 		wire.writeUInt8(wire.readUInt8(0) & 0x7f, 0)
 	}

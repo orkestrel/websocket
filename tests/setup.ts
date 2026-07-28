@@ -152,3 +152,9 @@ export function nextClose(ws: WebSocket): Promise<CloseEvent> {
 		ws.addEventListener('close', (event) => resolve(event), { once: true })
 	})
 }
+
+/** Whether a repository-relative Vue SFC path belongs to the private browser application. */
+export function isBrowserVuePath(path: string): boolean {
+	const normalized = path.replaceAll('\\', '/')
+	return normalized.startsWith('app/browser/')
+}

@@ -513,7 +513,7 @@ describe('codec properties — mask XOR is an involution', () => {
 				const b = buf.readUInt8(byte)
 				const m = mask.readUInt8(byte % 4)
 				once[byte] = b ^ m
-				twice[byte] = once[byte] ^ m
+				twice[byte] = once.readUInt8(byte) ^ m
 			}
 			expect(twice.equals(buf)).toBe(true)
 		}

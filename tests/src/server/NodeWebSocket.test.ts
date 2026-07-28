@@ -15,7 +15,7 @@ import {
 	WEBSOCKET_OPCODE_PONG,
 	WEBSOCKET_OPCODE_TEXT,
 } from '@src/server'
-import { createRandom, waitForDelay } from '../../setup.js'
+import { createRandom, requireValue, waitForDelay } from '../../setup.js'
 import {
 	duplexPair,
 	flushSocket,
@@ -344,8 +344,9 @@ describe('NodeWebSocket — §13 observer-error isolation', () => {
 
 		// The throw was caught and routed to the error handler; the socket is still open and usable.
 		expect(errors).toHaveLength(1)
-		expect(errors[0][0]).toBeInstanceOf(Error)
-		expect(errors[0][1]).toBe('message')
+		const [error, event] = requireValue(errors[0])
+		expect(error).toBeInstanceOf(Error)
+		expect(event).toBe('message')
 		expect(ws.readyState).toBe(1)
 
 		// A second message still dispatches — the socket did not crash.

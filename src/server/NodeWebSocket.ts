@@ -68,6 +68,10 @@ export class NodeWebSocket implements NodeWebSocketInterface {
 	readonly #payload: number
 	readonly #timeout: number
 	readonly #signal: AbortSignal | undefined
+	readonly #dataListener: (chunk: unknown) => void
+	readonly #closeListener: () => void
+	readonly #errorListener: (error: unknown) => void
+	readonly #abortListener: () => void
 	#buffer: Buffer = Buffer.alloc(0)
 	#readyState: WebSocketReadyState = WEBSOCKET_READY_CONNECTING
 	#code: number | undefined
@@ -78,31 +82,6 @@ export class NodeWebSocket implements NodeWebSocketInterface {
 	#closeTimer: ReturnType<typeof setTimeout> | undefined
 	#destroyed = false
 	#detached = false
-
-	// The socket listeners are bound fields so `destroy` can detach exactly these.
-	readonly #onData = (chunk: unknown): void => {
-		if (this.#readyState === WEBSOCKET_READY_CLOSED) return
-		const bytes = this.#bytes(chunk)
-		if (bytes === undefined) return
-		this.#ingest(bytes)
-	}
-
-	readonly #onClose = (): void => {
-		this.#finish()
-	}
-
-	readonly #onError = (error: unknown): void => {
-		this.#emitter.emit('error', error)
-		this.destroy()
-	}
-
-	// Keep a terminal socket safe from late peer errors after the domain listener is gone.
-	readonly #onDetachedError = (): void => undefined
-
-	// Bound so `#finish` / `destroy` can detach exactly this listener from `#signal`.
-	readonly #onAbort = (): void => {
-		this.destroy()
-	}
 
 	constructor(options: NodeWebSocketOptions) {
 		const payload = options.payload ?? WEBSOCKET_MAX_PAYLOAD
@@ -123,7 +102,10 @@ export class NodeWebSocket implements NodeWebSocketInterface {
 			throw new RangeError('protocol requires a server key')
 		}
 
-		this.#emitter = new Emitter({ on: options.on, error: options.error })
+		this.#emitter = new Emitter({
+			...(options.on === undefined ? {} : { on: options.on }),
+			...(options.error === undefined ? {} : { error: options.error }),
+		})
 		this.#socket = options.socket
 		// Server mode is identified by a client key (it writes the handshake + sends
 		// unmasked frames); without one this is a client (no handshake, masked frames).
@@ -131,6 +113,11 @@ export class NodeWebSocket implements NodeWebSocketInterface {
 		this.#payload = payload
 		this.#timeout = timeout
 		this.#signal = options.signal
+		// Retain each bound listener so terminal paths detach only this wrapper's callbacks.
+		this.#dataListener = this.#handleData.bind(this)
+		this.#closeListener = this.#finish.bind(this)
+		this.#errorListener = this.#handleError.bind(this)
+		this.#abortListener = this.destroy.bind(this)
 
 		if (options.key !== undefined) {
 			const headers = [
@@ -146,13 +133,13 @@ export class NodeWebSocket implements NodeWebSocketInterface {
 		}
 
 		this.#readyState = WEBSOCKET_READY_OPEN
-		this.#socket.on('data', this.#onData)
-		this.#socket.on('close', this.#onClose)
-		this.#socket.on('error', this.#onError)
+		this.#socket.on('data', this.#dataListener)
+		this.#socket.on('close', this.#closeListener)
+		this.#socket.on('error', this.#errorListener)
 		this.#emitter.emit('open')
 
 		// Replay any bytes buffered after the upgrade headers through the same ingest path
-		// as `#onData`, so the pre-buffer cap check applies uniformly (AGENTS §5 dedup).
+		// as `#handleData`, so the pre-buffer cap check applies uniformly (AGENTS §5 dedup).
 		const head = options.head
 		if (head !== undefined && head.length > 0) {
 			this.#ingest(head)
@@ -170,7 +157,7 @@ export class NodeWebSocket implements NodeWebSocketInterface {
 			if (this.#signal?.aborted === true) {
 				this.destroy()
 			} else {
-				this.#signal?.addEventListener('abort', this.#onAbort, { once: true })
+				this.#signal?.addEventListener('abort', this.#abortListener, { once: true })
 			}
 		}
 	}
@@ -229,7 +216,7 @@ export class NodeWebSocket implements NodeWebSocketInterface {
 		this.#destroyed = true
 		// Detach before destroy so a destroy-time error reaches the terminal sink.
 		this.#detach()
-		this.#signal?.removeEventListener('abort', this.#onAbort)
+		this.#signal?.removeEventListener('abort', this.#abortListener)
 		// `#finish` no-ops once already CLOSED (e.g. after `#fail` armed the hard-teardown
 		// fallback), so the timer is cleared here unconditionally rather than relying on it.
 		clearTimeout(this.#closeTimer)
@@ -396,10 +383,11 @@ export class NodeWebSocket implements NodeWebSocketInterface {
 	#detach(): void {
 		if (this.#detached) return
 		this.#detached = true
-		this.#socket.off('data', this.#onData)
-		this.#socket.off('close', this.#onClose)
-		this.#socket.off('error', this.#onError)
-		this.#socket.on('error', this.#onDetachedError)
+		this.#socket.off('data', this.#dataListener)
+		this.#socket.off('close', this.#closeListener)
+		this.#socket.off('error', this.#errorListener)
+		// Keep a terminal socket safe from late peer errors after the domain listener is gone.
+		this.#socket.on('error', () => undefined)
 	}
 
 	// Write one frame to the socket — masked in client mode, unmasked in server mode.
@@ -462,17 +450,29 @@ export class NodeWebSocket implements NodeWebSocketInterface {
 		this.#detach()
 		clearTimeout(this.#closeTimer)
 		this.#closeTimer = undefined
-		this.#signal?.removeEventListener('abort', this.#onAbort)
+		this.#signal?.removeEventListener('abort', this.#abortListener)
 		this.#readyState = WEBSOCKET_READY_CLOSED
 		this.#emitter.emit('close', this.#code, this.#reason)
 	}
 
 	// Append `bytes` to the accumulation buffer, then drain every complete frame. `#drain`
 	// preflights canonical encoding and the declared payload cap on EACH iteration, so
-	// every coalesced frame receives the same validation. Shared by `#onData` and head replay.
+	// every coalesced frame receives the same validation. Shared by `#handleData` and head replay.
 	#ingest(bytes: Buffer): void {
 		this.#buffer = Buffer.concat([this.#buffer, bytes])
 		this.#drain()
+	}
+
+	#handleData(chunk: unknown): void {
+		if (this.#readyState === WEBSOCKET_READY_CLOSED) return
+		const bytes = this.#bytes(chunk)
+		if (bytes === undefined) return
+		this.#ingest(bytes)
+	}
+
+	#handleError(error: unknown): void {
+		this.#emitter.emit('error', error)
+		this.destroy()
 	}
 
 	// Narrow an untyped socket `data` chunk to a `Buffer` (AGENTS §14) — a `node:net`
