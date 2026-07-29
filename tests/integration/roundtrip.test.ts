@@ -1,6 +1,6 @@
 // Real-browser WebSocket roundtrip — runs INSIDE headless Chromium (AGENTS §16.2): no
 // `@src/*` or `node:*` import here, only the browser-native `WebSocket` and the
-// `wsUrl` the Node-side `setupIntegration.ts` provided (booting the package's
+// `wsUrl` the Node-side `setupGlobal.ts` provided (booting the package's
 // own `createNodeWebSocket` server). Proves the wire protocol actually round-trips
 // against a real client, not just the in-memory Duplex pair the src:server suite drives.
 

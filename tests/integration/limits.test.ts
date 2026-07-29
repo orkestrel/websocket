@@ -1,7 +1,7 @@
 // Real-browser WebSocket limit/stress battery — runs INSIDE headless Chromium (AGENTS
 // §16.2): no `@src/*` or `node:*` import here, only the browser-native `WebSocket` and
 // the shared browser helpers from `tests/setup.ts` (env-agnostic, framework-free), plus
-// the injected `wsUrl` the Node-side `setupIntegration.ts` provides.
+// the injected `wsUrl` the Node-side `setupGlobal.ts` provides.
 
 import { describe, expect, inject, it } from 'vitest'
 import {
