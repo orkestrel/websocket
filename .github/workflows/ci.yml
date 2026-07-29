@@ -44,3 +44,6 @@ jobs:
 
       - name: Run tests
         run: npm test
+
+      - name: Run live consumer integration
+        run: npm run test:integration

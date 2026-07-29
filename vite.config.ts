@@ -9,44 +9,15 @@ import {
 	constants as FS_CONSTANTS,
 	existsSync,
 	fstatSync,
-	globSync,
 	lstatSync,
 	openSync,
 	readSync,
 	realpathSync,
 } from 'node:fs'
 import { dirname, isAbsolute, relative, resolve as resolvePath, sep } from 'node:path'
-import { playwright } from '@vitest/browser-playwright'
 
 export function resolveWorkspacePath(relativePath: string): string {
 	return fileURLToPath(new URL(relativePath, import.meta.url))
-}
-
-export function createBrowserProvider() {
-	const { PLAYWRIGHT_EXECUTABLE_PATH, PLAYWRIGHT_WS_ENDPOINT, PLAYWRIGHT_CHANNEL } = process.env
-	if (PLAYWRIGHT_EXECUTABLE_PATH) {
-		return playwright({ launchOptions: { executablePath: PLAYWRIGHT_EXECUTABLE_PATH } })
-	}
-	if (PLAYWRIGHT_WS_ENDPOINT) {
-		return playwright({ connectOptions: { wsEndpoint: PLAYWRIGHT_WS_ENDPOINT } })
-	}
-	if (PLAYWRIGHT_CHANNEL) {
-		return playwright({ launchOptions: { channel: PLAYWRIGHT_CHANNEL } })
-	}
-	if (process.platform === 'linux') {
-		for (const pattern of [
-			'/opt/pw-browsers/chromium',
-			'/opt/pw-browsers/chromium-*/chrome-linux64/chrome',
-			'/opt/pw-browsers/chromium-*/chrome-linux/chrome',
-		]) {
-			const [executablePath] = globSync(pattern).sort().reverse()
-			if (executablePath !== undefined) {
-				return playwright({ launchOptions: { executablePath } })
-			}
-		}
-	}
-	const channel = process.platform === 'win32' ? 'msedge' : 'chrome'
-	return playwright({ launchOptions: { channel } })
 }
 
 export function hasAsciiUrlControl(value: string): boolean {
@@ -70,15 +41,21 @@ export const ENVIRONMENT_MODULE_BYTES = 8_388_608
 
 const WORKSPACE_ROOT = realpathSync.native(dirname(fileURLToPath(import.meta.url)))
 
+export function fileSystemPath(pathname: string): string {
+	if (!pathname.startsWith('/@fs/')) return pathname
+	const candidate = pathname.slice('/@fs/'.length)
+	// Vite URL normalization can collapse the leading slash of a POSIX absolute path.
+	return candidate.startsWith('/') || /^[A-Za-z]:[\\/]/.test(candidate)
+		? candidate
+		: `/${candidate}`
+}
+
 export function physicalPath(path: string): string {
 	const [pathWithoutQuery] = path.split('?')
-	const candidate = pathWithoutQuery?.startsWith('/@fs/')
-		? pathWithoutQuery.slice('/@fs/'.length)
-		: pathWithoutQuery
-	const physicalCandidate =
-		candidate !== undefined && /^file:/i.test(candidate) ? fileURLToPath(candidate) : candidate
+	const candidate = fileSystemPath(pathWithoutQuery ?? path)
+	const physicalCandidate = /^file:/i.test(candidate) ? fileURLToPath(candidate) : candidate
 	const absoluteCandidate =
-		physicalCandidate === undefined || physicalCandidate.length === 0
+		physicalCandidate.length === 0
 			? WORKSPACE_ROOT
 			: isAbsolute(physicalCandidate)
 				? physicalCandidate
@@ -98,13 +75,68 @@ export function workspacePath(path: string): string | undefined {
 	return relativePath
 }
 
+export function isBoundaryExemptModule(id: string): boolean {
+	const normalizedId = id.replaceAll('\\', '/')
+	const [path] = normalizedId.split(/[?#]/)
+	if (
+		path === undefined ||
+		normalizedId.startsWith('\0') ||
+		normalizedId.includes('virtual:') ||
+		normalizedId === '@vite/client' ||
+		normalizedId === '@vite/env' ||
+		normalizedId.startsWith('/@id/') ||
+		normalizedId.startsWith('/@vite/') ||
+		normalizedId.startsWith('/__vite') ||
+		normalizedId.startsWith('/__vitest') ||
+		normalizedId.startsWith('@vitest/browser') ||
+		normalizedId.includes('/@vitest/browser/')
+	) {
+		return true
+	}
+	let physicalId: string | undefined
+	try {
+		physicalId = physicalPath(id).replaceAll('\\', '/')
+	} catch {
+		physicalId = undefined
+	}
+	for (const candidate of physicalId === undefined ? [path] : [path, physicalId]) {
+		if (candidate.split('/').some((segment) => segment.toLowerCase() === 'node_modules')) {
+			return true
+		}
+	}
+	return false
+}
+
+export function isWorkspaceBoundaryModule(id: string): boolean {
+	if (isBoundaryExemptModule(id)) return false
+	const normalizedId = id.replaceAll('\\', '/')
+	const [path] = normalizedId.split(/[?#]/)
+	if (path === undefined) return false
+	let candidate = fileSystemPath(path)
+	try {
+		if (/^file:/i.test(candidate)) candidate = fileURLToPath(candidate)
+	} catch {
+		return false
+	}
+	const rootRelative = /^\/(?:app|src)\/(?:core|browser|server)\//.test(candidate)
+	const absoluteCandidate = rootRelative
+		? resolvePath(WORKSPACE_ROOT, candidate.slice(1))
+		: isAbsolute(candidate)
+			? candidate
+			: resolvePath(WORKSPACE_ROOT, candidate)
+	const relativeId = relative(WORKSPACE_ROOT, absoluteCandidate).replaceAll('\\', '/')
+	return (
+		relativeId !== '..' &&
+		!relativeId.startsWith('../') &&
+		!isAbsolute(relativeId) &&
+		/^(?:app|src)\/(?:core|browser|server)\//.test(relativeId)
+	)
+}
+
 export function isOutsideWorkspacePath(path: string): boolean {
 	const [pathWithoutQuery] = path.split('?')
 	if (pathWithoutQuery === undefined) return false
-	const candidate = pathWithoutQuery.startsWith('/@fs/')
-		? pathWithoutQuery.slice('/@fs/'.length)
-		: pathWithoutQuery
-	return isAbsolute(candidate)
+	return isAbsolute(fileSystemPath(pathWithoutQuery))
 }
 
 export function containedPath(root: string, target: string): boolean {
@@ -415,6 +447,7 @@ export async function environmentAssetSources(
 	const transformed = await transformWithOxc(code, path)
 	const visitor = new Visitor({
 		ImportExpression(node) {
+			if (emitted) return
 			let value: string | undefined
 			if (node.source.type === 'Literal' && typeof node.source.value === 'string') {
 				value = node.source.value
@@ -500,8 +533,8 @@ export function environmentBoundary(
 			environmentRoot = physicalPath(config.root)
 		},
 		async resolveId(source, importer) {
-			if (importer === undefined) return null
-			if (source.startsWith('\0')) return null
+			if (importer === undefined || !isWorkspaceBoundaryModule(importer)) return null
+			if (isBoundaryExemptModule(source)) return null
 			const normalizedSource = source.replaceAll('\\', '/')
 			const sourceError = environmentSourceError(owner, normalizedSource)
 			if (sourceError !== undefined) this.error(sourceError)
@@ -578,6 +611,7 @@ export function environmentBoundary(
 			return null
 		},
 		async load(id) {
+			if (!isWorkspaceBoundaryModule(id)) return null
 			const physicalImporter = physicalPath(id)
 			const trustedPackageRoot = trustedPackageRootFor(physicalImporter, trustedPackageRoots)
 			const inferredPackageRoot =
@@ -635,6 +669,7 @@ export function environmentBoundary(
 					const physical = physicalPath(
 						isAbsolute(original) ? original : resolvePath(environmentRoot, original),
 					)
+					if (isBoundaryExemptModule(original) || isBoundaryExemptModule(physical)) continue
 					const target = workspacePath(physical)
 					if (target === undefined) {
 						if (trustedPackageRootFor(physical, trustedPackageRoots) === undefined) {
@@ -650,6 +685,7 @@ export function environmentBoundary(
 		buildEnd(error) {
 			if (error !== undefined) return
 			for (const id of this.getModuleIds()) {
+				if (!isWorkspaceBoundaryModule(id)) continue
 				const target = workspacePath(id)
 				if (target === undefined) {
 					if (
@@ -667,6 +703,7 @@ export function environmentBoundary(
 		transform: {
 			order: 'pre',
 			async handler(code, id) {
+				if (!isWorkspaceBoundaryModule(id)) return null
 				const target = workspacePath(id)
 				const physicalImporter = physicalPath(id)
 				const importerPackageRoot = trustedPackageRootFor(physicalImporter, trustedPackageRoots)
@@ -778,17 +815,19 @@ export const policy = (config?: UserConfig): UserConfig =>
 	)
 
 export const guides = (config?: UserConfig): UserConfig =>
-	srcServer(
-		mergeConfig(
-			{
-				test: {
-					name: { label: 'guides', color: 'green' },
-					include: ['tests/guides/**/*.test.ts'],
-					exclude: ['tests/src/**/*.test.ts', 'tests/setup.test.ts'],
-				},
+	mergeConfig(
+		{
+			resolve,
+			test: {
+				name: { label: 'guides', color: 'green' },
+				include: ['tests/guides/**/*.test.ts'],
+				exclude: ['tests/src/**/*.test.ts', 'tests/app/**/*.test.ts', 'tests/setup.test.ts'],
+				setupFiles: ['./tests/setup.ts'],
+				environment: 'node',
+				browser: { enabled: false },
 			},
-			config ?? {},
-		),
+		},
+		config ?? {},
 	)
 
 export const integration = (config?: UserConfig): UserConfig =>
@@ -799,12 +838,10 @@ export const integration = (config?: UserConfig): UserConfig =>
 				name: { label: 'integration', color: 'blue' },
 				include: ['tests/integration/**/*.test.ts'],
 				setupFiles: ['./tests/setup.ts'],
-				globalSetup: ['./tests/setupIntegration.ts'],
-				browser: {
-					enabled: true,
-					provider: createBrowserProvider(),
-					instances: [{ browser: 'chromium', headless: true }],
-				},
+				environment: 'node',
+				browser: { enabled: false },
+				testTimeout: 120_000,
+				hookTimeout: 120_000,
 				fileParallelism: false,
 			},
 		},
@@ -814,6 +851,6 @@ export const integration = (config?: UserConfig): UserConfig =>
 export default defineConfig({
 	resolve,
 	test: {
-		projects: [srcServer, integration, policy, guides],
+		projects: [srcServer, policy, guides, integration],
 	},
 })
