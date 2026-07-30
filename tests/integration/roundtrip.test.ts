@@ -1,4 +1,4 @@
-// Real-browser WebSocket roundtrip — runs INSIDE headless Chromium (AGENTS §16.2): no
+// Live-client WebSocket roundtrip — driven by the platform WebSocket client (AGENTS §16.2): no
 // `@src/*` or `node:*` import here, only the browser-native `WebSocket` and the
 // `wsUrl` the Node-side `setupGlobal.ts` provided (booting the package's
 // own `createNodeWebSocket` server). Proves the wire protocol actually round-trips
@@ -7,7 +7,7 @@
 import { describe, expect, inject, it } from 'vitest'
 import { connect, INTEGRATION_CLOSE_NORMAL_REQUEST, nextClose, nextMessage } from '../setup.js'
 
-describe('WebSocket integration — real browser roundtrip', () => {
+describe('WebSocket integration — live client roundtrip', () => {
 	it('completes the handshake and reaches OPEN', async () => {
 		const socket = await connect(inject('wsUrl'))
 		expect(socket.readyState).toBe(WebSocket.OPEN)

@@ -838,6 +838,7 @@ export const integration = (config?: UserConfig): UserConfig =>
 				name: { label: 'integration', color: 'blue' },
 				include: ['tests/integration/**/*.test.ts'],
 				setupFiles: ['./tests/setup.ts'],
+				globalSetup: ['./tests/setupGlobal.ts'],
 				environment: 'node',
 				browser: { enabled: false },
 				testTimeout: 120_000,

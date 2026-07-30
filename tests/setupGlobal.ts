@@ -1,5 +1,5 @@
 // Global setup for the `integration` project (AGENTS §16 live-service exception) — runs
-// ONCE in Node, before headless Chromium starts, and stays out of the browser-side test
+// ONCE in Node, before the client-side tests start, and stays out of the client-side test
 // files entirely (they import nothing from `@src/*` or `node:*`). It boots a real
 // `node:http` server, upgrades every request to a server-mode `createNodeWebSocket`
 // (the package's own public factory — the same wiring shown in its TSDoc example), and

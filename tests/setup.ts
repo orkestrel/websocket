@@ -101,7 +101,7 @@ export function requireValue<T>(value: T | null | undefined): T {
 	return value
 }
 
-// The small command vocabulary used by the real-browser integration fixture. These
+// The small command vocabulary used by the live-client integration fixture. These
 // strings are protocol data, so they are centralized rather than repeated as
 // behavior-selecting literals across the Node server and browser tests.
 export const INTEGRATION_CLOSE_NORMAL_REQUEST = 'close-me'
@@ -111,8 +111,8 @@ export const INTEGRATION_COUNT_PREFIX = 'count: '
 
 // ── Browser WebSocket helpers (pure — WebSocket + Promise only) ──────────────
 //
-// AGENTS §16.1: the integration project loads `setup.ts` into its headless-Chromium
-// browser tests too, so these tiny, framework-free WebSocket helpers live here
+// AGENTS §16.1: the integration project loads `setup.ts` into its platform-WebSocket
+// client tests too, so these tiny, framework-free WebSocket helpers live here
 // rather than in a node-only setup file — they touch no `node:*` API.
 
 /**
