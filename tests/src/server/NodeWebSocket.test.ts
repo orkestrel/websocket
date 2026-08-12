@@ -262,7 +262,7 @@ describe('NodeWebSocket — close', () => {
 	it('a client close frame ends the socket with the echoed close handshake and a close event', async () => {
 		const [server, client] = duplexPair()
 		const { frames } = readClientFrames(client)
-		const closes: { code: number | undefined; reason: string | undefined }[] = []
+		const closes: Array<{ code: number | undefined; reason: string | undefined }> = []
 		const ws = createNodeWebSocket({
 			socket: server,
 			key: CLIENT_KEY,
@@ -325,7 +325,7 @@ describe('NodeWebSocket — close', () => {
 describe('NodeWebSocket — §13 observer-error isolation', () => {
 	it('isolates a throwing message listener and routes to the error handler', async () => {
 		const [server, client] = duplexPair()
-		const errors: (readonly [unknown, string])[] = []
+		const errors: Array<readonly [unknown, string]> = []
 		const ws = createNodeWebSocket({
 			socket: server,
 			key: CLIENT_KEY,
@@ -370,7 +370,7 @@ describe('NodeWebSocket — breach matrix', () => {
 	it('an unmasked client frame closes with 1002 (protocol error)', async () => {
 		const [server, client] = duplexPair()
 		const { frames } = readClientFrames(client)
-		const closes: (number | undefined)[] = []
+		const closes: Array<number | undefined> = []
 		const ws = createNodeWebSocket({
 			socket: server,
 			key: CLIENT_KEY,
@@ -391,7 +391,7 @@ describe('NodeWebSocket — breach matrix', () => {
 
 	it('a frame with RSV bits set closes with 1002 (protocol error)', async () => {
 		const [server, client] = duplexPair()
-		const closes: (number | undefined)[] = []
+		const closes: Array<number | undefined> = []
 		const ws = createNodeWebSocket({
 			socket: server,
 			key: CLIENT_KEY,
@@ -421,7 +421,7 @@ describe('NodeWebSocket — breach matrix', () => {
 
 		for (const wire of [nonMinimal16, nonMinimal64, highBit64]) {
 			const [server, client] = duplexPair()
-			const closes: (number | undefined)[] = []
+			const closes: Array<number | undefined> = []
 			const ws = createNodeWebSocket({
 				socket: server,
 				key: CLIENT_KEY,
@@ -439,7 +439,7 @@ describe('NodeWebSocket — breach matrix', () => {
 
 	it('a control frame payload over 125 bytes closes with 1002 (protocol error)', async () => {
 		const [server, client] = duplexPair()
-		const closes: (number | undefined)[] = []
+		const closes: Array<number | undefined> = []
 		const ws = createNodeWebSocket({
 			socket: server,
 			key: CLIENT_KEY,
@@ -456,7 +456,7 @@ describe('NodeWebSocket — breach matrix', () => {
 
 	it('a fragmented control frame (FIN=0 on a ping) closes with 1002 (protocol error)', async () => {
 		const [server, client] = duplexPair()
-		const closes: (number | undefined)[] = []
+		const closes: Array<number | undefined> = []
 		const ws = createNodeWebSocket({
 			socket: server,
 			key: CLIENT_KEY,
@@ -475,7 +475,7 @@ describe('NodeWebSocket — breach matrix', () => {
 
 	it('a continuation frame with no started message closes with 1002 (protocol error)', async () => {
 		const [server, client] = duplexPair()
-		const closes: (number | undefined)[] = []
+		const closes: Array<number | undefined> = []
 		const ws = createNodeWebSocket({
 			socket: server,
 			key: CLIENT_KEY,
@@ -496,7 +496,7 @@ describe('NodeWebSocket — breach matrix', () => {
 
 	it('a new data frame opened mid-message closes with 1002 (protocol error)', async () => {
 		const [server, client] = duplexPair()
-		const closes: (number | undefined)[] = []
+		const closes: Array<number | undefined> = []
 		const ws = createNodeWebSocket({
 			socket: server,
 			key: CLIENT_KEY,
@@ -518,7 +518,7 @@ describe('NodeWebSocket — breach matrix', () => {
 
 	it('a reserved opcode closes with 1002 (protocol error)', async () => {
 		const [server, client] = duplexPair()
-		const closes: (number | undefined)[] = []
+		const closes: Array<number | undefined> = []
 		const ws = createNodeWebSocket({
 			socket: server,
 			key: CLIENT_KEY,
@@ -535,7 +535,7 @@ describe('NodeWebSocket — breach matrix', () => {
 
 	it('an inbound binary message closes with 1003 (unsupported data)', async () => {
 		const [server, client] = duplexPair()
-		const closes: (number | undefined)[] = []
+		const closes: Array<number | undefined> = []
 		const ws = createNodeWebSocket({
 			socket: server,
 			key: CLIENT_KEY,
@@ -556,7 +556,7 @@ describe('NodeWebSocket — breach matrix', () => {
 
 	it('an invalid-UTF-8 text message closes with 1007 (invalid frame payload data)', async () => {
 		const [server, client] = duplexPair()
-		const closes: (number | undefined)[] = []
+		const closes: Array<number | undefined> = []
 		const ws = createNodeWebSocket({
 			socket: server,
 			key: CLIENT_KEY,
@@ -576,7 +576,7 @@ describe('NodeWebSocket — breach matrix', () => {
 
 	it('a 1-byte close payload closes with 1002 (protocol error)', async () => {
 		const [server, client] = duplexPair()
-		const closes: (number | undefined)[] = []
+		const closes: Array<number | undefined> = []
 		const ws = createNodeWebSocket({
 			socket: server,
 			key: CLIENT_KEY,
@@ -595,7 +595,7 @@ describe('NodeWebSocket — breach matrix', () => {
 
 	it('an invalid close code (1005) closes with 1002 (protocol error)', async () => {
 		const [server, client] = duplexPair()
-		const closes: (number | undefined)[] = []
+		const closes: Array<number | undefined> = []
 		const ws = createNodeWebSocket({
 			socket: server,
 			key: CLIENT_KEY,
@@ -615,7 +615,7 @@ describe('NodeWebSocket — breach matrix', () => {
 	it('a single frame declaring a length over the payload cap closes with 1009 (message too big)', async () => {
 		const [server, client] = duplexPair()
 		const { frames } = readClientFrames(client)
-		const closes: (number | undefined)[] = []
+		const closes: Array<number | undefined> = []
 		const ws = createNodeWebSocket({
 			socket: server,
 			key: CLIENT_KEY,
@@ -641,7 +641,7 @@ describe('NodeWebSocket — breach matrix', () => {
 	it('preflights every coalesced frame before buffering its payload', async () => {
 		const [server, client] = duplexPair()
 		const messages: string[] = []
-		const closes: (number | undefined)[] = []
+		const closes: Array<number | undefined> = []
 		const ws = createNodeWebSocket({
 			socket: server,
 			key: CLIENT_KEY,
@@ -667,7 +667,7 @@ describe('NodeWebSocket — breach matrix', () => {
 
 	it('a fragmented message whose reassembled total exceeds the payload cap closes with 1009 (message too big)', async () => {
 		const [server, client] = duplexPair()
-		const closes: (number | undefined)[] = []
+		const closes: Array<number | undefined> = []
 		const ws = createNodeWebSocket({
 			socket: server,
 			key: CLIENT_KEY,
@@ -698,7 +698,7 @@ describe('NodeWebSocket — breach matrix', () => {
 
 	it('a close-handshake timeout auto-destroys the socket when the peer never echoes', async () => {
 		const [server] = duplexPair()
-		const closes: (number | undefined)[] = []
+		const closes: Array<number | undefined> = []
 		const ws = createNodeWebSocket({
 			socket: server,
 			key: CLIENT_KEY,
@@ -725,7 +725,7 @@ describe('NodeWebSocket — breach matrix', () => {
 describe('NodeWebSocket — head-replay cap parity', () => {
 	it('an over-cap frame delivered entirely via options.head closes 1009 without buffering the payload', async () => {
 		const [server] = duplexPair()
-		const closes: (number | undefined)[] = []
+		const closes: Array<number | undefined> = []
 		// A small injected payload cap makes the over-cap breach cheap to construct and
 		// proves the head bytes never reach `#drain`/`#dispatch` unbuffered past the cap.
 		const head = encodeWebSocketFrame(WEBSOCKET_OPCODE_TEXT, Buffer.alloc(20, 0x61), {
@@ -768,7 +768,7 @@ describe('NodeWebSocket — AbortSignal lifecycle', () => {
 	it('an abort mid-open tears the socket down: readyState CLOSED, close emitted, socket destroyed', async () => {
 		const [server] = duplexPair()
 		const controller = new AbortController()
-		const closes: (number | undefined)[] = []
+		const closes: Array<number | undefined> = []
 		const ws = createNodeWebSocket({
 			socket: server,
 			key: CLIENT_KEY,
@@ -789,7 +789,7 @@ describe('NodeWebSocket — AbortSignal lifecycle', () => {
 		const [server] = duplexPair()
 		const controller = new AbortController()
 		controller.abort()
-		const closes: (number | undefined)[] = []
+		const closes: Array<number | undefined> = []
 		const ws = createNodeWebSocket({
 			socket: server,
 			key: CLIENT_KEY,
@@ -864,7 +864,7 @@ describe('NodeWebSocket — AbortSignal lifecycle', () => {
 describe('NodeWebSocket — terminal socket listeners', () => {
 	it('emits an active socket error once and terminates the WebSocket', () => {
 		const [server] = duplexPair()
-		const events: (string | unknown)[] = []
+		const events: Array<string | unknown> = []
 		const ws = createNodeWebSocket({
 			socket: server,
 			key: CLIENT_KEY,
@@ -1130,7 +1130,7 @@ describe('NodeWebSocket — stream reassembly and lifecycle', () => {
 
 	it('closes 1009 when the fragmented total is one over the payload cap', async () => {
 		const [server, client] = duplexPair()
-		const closes: (number | undefined)[] = []
+		const closes: Array<number | undefined> = []
 		const ws = createNodeWebSocket({
 			socket: server,
 			key: CLIENT_KEY,
@@ -1173,7 +1173,7 @@ describe('NodeWebSocket — stream reassembly and lifecycle', () => {
 	it('closes 1009 for a single frame one over the payload cap, observed by the peer', async () => {
 		const [server, client] = duplexPair()
 		const { frames } = readClientFrames(client)
-		const closes: (number | undefined)[] = []
+		const closes: Array<number | undefined> = []
 		const ws = createNodeWebSocket({
 			socket: server,
 			key: CLIENT_KEY,
@@ -1195,7 +1195,7 @@ describe('NodeWebSocket — stream reassembly and lifecycle', () => {
 	it('completes a we-initiate → peer-echoes close with exactly one close event', async () => {
 		const [server, client] = duplexPair()
 		const { frames } = readClientFrames(client)
-		const closes: (number | undefined)[] = []
+		const closes: Array<number | undefined> = []
 		const ws = createNodeWebSocket({
 			socket: server,
 			key: CLIENT_KEY,
@@ -1222,7 +1222,7 @@ describe('NodeWebSocket — stream reassembly and lifecycle', () => {
 
 	it('survives a simultaneous close with exactly one close event, no throw', async () => {
 		const [server, client] = duplexPair()
-		const closes: (number | undefined)[] = []
+		const closes: Array<number | undefined> = []
 		const ws = createNodeWebSocket({
 			socket: server,
 			key: CLIENT_KEY,
@@ -1328,7 +1328,7 @@ describe('NodeWebSocket — stream reassembly and lifecycle', () => {
 describe('NodeWebSocket — resource limits', () => {
 	it('bounds a fragmentation bomb to 1009 without OOM', async () => {
 		const [server, client] = duplexPair()
-		const closes: (number | undefined)[] = []
+		const closes: Array<number | undefined> = []
 		const ws = createNodeWebSocket({
 			socket: server,
 			key: CLIENT_KEY,
@@ -1359,7 +1359,7 @@ describe('NodeWebSocket — resource limits', () => {
 
 	it('rejects a declared-huge frame on the header alone, before any payload byte is sent', async () => {
 		const [server, client] = duplexPair()
-		const closes: (number | undefined)[] = []
+		const closes: Array<number | undefined> = []
 		const ws = createNodeWebSocket({
 			socket: server,
 			key: CLIENT_KEY,
@@ -1391,7 +1391,7 @@ describe('NodeWebSocket — resource limits', () => {
 	// timeout, by design (see AGENTS §16 framing notes).
 	it('leaves a stalled partial frame bounded with no idle timeout (intended, by design)', async () => {
 		const [server, client] = duplexPair()
-		const closes: (number | undefined)[] = []
+		const closes: Array<number | undefined> = []
 		const ws = createNodeWebSocket({
 			socket: server,
 			key: CLIENT_KEY,
@@ -1411,7 +1411,7 @@ describe('NodeWebSocket — resource limits', () => {
 
 	it('yields exactly one close + teardown for many violations stacked in one chunk', async () => {
 		const [server, client] = duplexPair()
-		const closes: (number | undefined)[] = []
+		const closes: Array<number | undefined> = []
 		const ws = createNodeWebSocket({
 			socket: server,
 			key: CLIENT_KEY,
