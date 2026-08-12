@@ -7,24 +7,24 @@ directory (AGENTS §22).
 
 | Concept   | Spec                                   | Source                        | Tests                                     |
 | --------- | -------------------------------------- | ----------------------------- | ----------------------------------------- |
-| WebSocket | [`src/websocket.md`](src/websocket.md) | [`src/server`](../src/server) | [`tests/src/server`](../tests/src/server) |
+| WebSocket | [`websocket.md`](websocket.md) | [`src/server`](../src/server) | [`tests/src/server`](../tests/src/server) |
 
 ## By directory
 
 | Directory    | Guide                                  |
 | ------------ | -------------------------------------- |
-| `src/server` | [`src/websocket.md`](src/websocket.md) |
+| `src/server` | [`websocket.md`](websocket.md) |
 
 ## Dependency reference
 
-[`src/emitter.md`](src/emitter.md) is a byte-identical mirror of the guide for
+[`emitter.md`](emitter.md) is a byte-identical mirror of the guide for
 `@orkestrel/emitter` — this package's sole runtime dependency. It documents
 **that package's** surface (the typed `Emitter` and its listener-error
 isolation), not anything sourced in this repo; it is kept here so a reader of
 this package can see the primitives it is built from without leaving this
 guide set.
 
-[`src/guide.md`](src/guide.md) is a byte-identical mirror of the guide for
+[`guide.md`](guide.md) is a byte-identical mirror of the guide for
 `@orkestrel/guide` — the devDependency powering this repo's guides-parity test
 suite (`tests/guides.test.ts`). It documents **that package's**
 surface (`Guide` / `Source`, the manifest and comparison helpers), not anything
