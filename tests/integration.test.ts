@@ -101,7 +101,15 @@ describe('WebSocket integration — limit & stress battery', () => {
 		const socket = await connect(inject('wsUrl'))
 		const rng = createRandom(11)
 		const sampled = buildText(rng, 200)
-		const payload = `${sampled}🔥🧵👩‍👩‍👧‍👦éCJK漢字中文한글`
+		const payload = `${sampled}🔥🧵👩‍👩‍👧‍👦éCJK漢字中文한글`
+		// The payload guards itself. The echo assertion below compares the reply to this
+		// same string, so it proves the transport round-tripped whatever it was given and
+		// says nothing about whether the string still carries the case this test exists
+		// for. A decomposed combining mark is that case — it is what a normalizing encoder
+		// silently folds — and retyping this line once already replaced it with the
+		// precomposed form, which renders identically and left the test green and useless.
+		expect(payload.normalize('NFC')).not.toBe(payload)
+		expect([...payload].some((character) => character.codePointAt(0) === 0x0301)).toBe(true)
 		const reply = nextMessage(socket)
 		socket.send(payload)
 		const event = await reply
