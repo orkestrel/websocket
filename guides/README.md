@@ -5,14 +5,14 @@ directory (AGENTS §22).
 
 ## By concept
 
-| Concept   | Spec                                   | Source                        | Tests                                     |
-| --------- | -------------------------------------- | ----------------------------- | ----------------------------------------- |
+| Concept   | Spec                           | Source                        | Tests                                     |
+| --------- | ------------------------------ | ----------------------------- | ----------------------------------------- |
 | WebSocket | [`websocket.md`](websocket.md) | [`src/server`](../src/server) | [`tests/src/server`](../tests/src/server) |
 
 ## By directory
 
-| Directory    | Guide                                  |
-| ------------ | -------------------------------------- |
+| Directory    | Guide                          |
+| ------------ | ------------------------------ |
 | `src/server` | [`websocket.md`](websocket.md) |
 
 ## Dependency reference
