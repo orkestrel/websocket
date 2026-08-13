@@ -1,42 +1,6 @@
-// ── Call recorder (a real callback, not a mock) ──────────────────────────────
-//
-// AGENTS §16.1: when a test only needs to count calls or inspect arguments, use a
-// recorder — a real listener that records every invocation — rather than a test-
-// framework spy. `handler` is a genuine callback; `calls` is each invocation's
-// argument tuple, in order.
-
-/** A real call-recording callback over an argument tuple (AGENTS §16.1). */
-export interface TestRecorderInterface<TArgs extends readonly unknown[]> {
-	readonly calls: readonly TArgs[]
-	readonly count: number
-	readonly handler: (...args: TArgs) => void
-	clear(): void
-}
-
-/**
- * Create a {@link TestRecorderInterface} — a real callback that records each
- * invocation's arguments, for asserting what fired and with what (AGENTS §16.1).
- *
- * @typeParam TArgs - The argument tuple the recorded handler receives
- * @returns A recorder whose `handler` records into `calls`
- */
-export function createRecorder<TArgs extends readonly unknown[]>(): TestRecorderInterface<TArgs> {
-	const calls: TArgs[] = []
-	return {
-		get calls() {
-			return calls
-		},
-		get count() {
-			return calls.length
-		},
-		handler(...args: TArgs) {
-			calls.push(args)
-		},
-		clear() {
-			calls.length = 0
-		},
-	}
-}
+// The fleet-wide helpers live in `@orkestrel/test`. What remains here is what is
+// specific to this package: seeded randomness/text, the integration command
+// vocabulary, and the pure browser WebSocket helpers.
 
 // ── Deterministic seeded randomness + text corpus (fuzz/property tests) ──────
 //
@@ -76,29 +40,6 @@ export function buildText(rng: () => number, length: number): string {
 		text += String.fromCodePoint(point)
 	}
 	return text
-}
-
-/**
- * Resolve after `ms` milliseconds — the §16.1 canonical delay helper, used instead
- * of an inline `setTimeout` promise wherever a test needs a short deterministic wait.
- *
- * @param ms - The delay in milliseconds
- * @returns A promise resolving once the delay elapses
- */
-export function waitForDelay(ms = 0): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-/**
- * Return a required test value after narrowing away absence.
- *
- * @param value - The value an earlier assertion or fixture lookup expects to exist
- * @returns The present value
- * @throws When `value` is absent
- */
-export function requireValue<T>(value: T | null | undefined): T {
-	if (value === undefined || value === null) throw new Error('Expected test value to exist')
-	return value
 }
 
 // The small command vocabulary used by the live-client integration fixture. These

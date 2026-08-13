@@ -8,6 +8,7 @@
 // dedicated, opt-in `integration` project instead (run via `npm run test:integration`).
 
 import { describe, expect, inject, it } from 'vitest'
+import { requireValue } from '@orkestrel/test'
 import {
 	buildText,
 	connect,
@@ -18,7 +19,6 @@ import {
 	INTEGRATION_COUNT_REQUEST,
 	nextClose,
 	nextMessage,
-	requireValue,
 } from './setup.js'
 
 describe('WebSocket integration — live client roundtrip', () => {

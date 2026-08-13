@@ -15,7 +15,8 @@ import {
 	WEBSOCKET_OPCODE_PONG,
 	WEBSOCKET_OPCODE_TEXT,
 } from '@src/server'
-import { createRandom, requireValue, waitForDelay } from '../../setup.js'
+import { requireValue, waitForDelay } from '@orkestrel/test'
+import { createRandom } from '../../setup.js'
 import {
 	duplexPair,
 	flushSocket,

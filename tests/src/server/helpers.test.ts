@@ -15,7 +15,8 @@ import {
 	WEBSOCKET_OPCODE_PONG,
 	WEBSOCKET_OPCODE_TEXT,
 } from '@src/server'
-import { buildText, createRandom, requireValue } from '../../setup.js'
+import { requireValue } from '@orkestrel/test'
+import { buildText, createRandom } from '../../setup.js'
 import { frame, randomBuffer } from '../../setupServer.js'
 
 // The RFC 6455 codec as pure units (no socket, AGENTS §16) — asserted against the
