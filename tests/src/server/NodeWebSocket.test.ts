@@ -15,7 +15,7 @@ import {
 	WEBSOCKET_OPCODE_PONG,
 	WEBSOCKET_OPCODE_TEXT,
 } from '@src/server'
-import { requireValue, waitForDelay } from '@orkestrel/test'
+import { createRecorder, requireValue, waitForDelay } from '@orkestrel/test'
 import { createRandom } from '../../setup.js'
 import {
 	duplexPair,
@@ -326,12 +326,12 @@ describe('NodeWebSocket — close', () => {
 describe('NodeWebSocket — §13 observer-error isolation', () => {
 	it('isolates a throwing message listener and routes to the error handler', async () => {
 		const [server, client] = duplexPair()
-		const errors: Array<readonly [unknown, string]> = []
+		const recorder = createRecorder<[error: unknown, event: string]>()
 		const ws = createNodeWebSocket({
 			socket: server,
 			key: CLIENT_KEY,
 			// The emitter's `error` handler receives (error, event) — never a domain event.
-			error: (error, event) => errors.push([error, event]),
+			error: recorder.handler,
 			on: {
 				message: () => {
 					throw new Error('listener boom')
@@ -344,8 +344,8 @@ describe('NodeWebSocket — §13 observer-error isolation', () => {
 		await flushSocket()
 
 		// The throw was caught and routed to the error handler; the socket is still open and usable.
-		expect(errors).toHaveLength(1)
-		const [error, event] = requireValue(errors[0])
+		expect(recorder.count).toBe(1)
+		const [error, event] = requireValue(recorder.calls[0])
 		expect(error).toBeInstanceOf(Error)
 		expect(event).toBe('message')
 		expect(ws.readyState).toBe(1)
