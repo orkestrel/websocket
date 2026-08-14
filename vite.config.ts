@@ -2,36 +2,10 @@ import type { UserConfig } from 'vite'
 import { defineConfig, mergeConfig } from 'vitest/config'
 import tsconfig from './tsconfig.json' with { type: 'json' }
 import { environmentBoundary, outputBoundary } from './configs/helpers.js'
-import { lstatSync, readdirSync, realpathSync } from 'node:fs'
-import { basename, join, parse, relative, resolve as resolvePath, sep } from 'node:path'
 import { fileURLToPath, URL } from 'node:url'
 
 export function resolveWorkspacePath(relativePath: string): string {
 	return fileURLToPath(new URL(relativePath, import.meta.url))
-}
-
-// A generated root config must classify its own fixed proof without importing
-// package source, so the exact-case check stays self-contained over Node APIs.
-function isExactCaseFile(path: string): boolean {
-	const full = resolvePath(path)
-	try {
-		const status = lstatSync(full)
-		if (!status.isFile() || status.isSymbolicLink() || status.nlink !== 1) return false
-		const root = parse(full).root
-		const segments = relative(root, full).split(sep)
-		let parent = root
-		for (const segment of segments) {
-			try {
-				if (!readdirSync(parent).includes(segment)) return false
-			} catch {
-				if (basename(realpathSync.native(join(parent, segment))) !== segment) return false
-			}
-			parent = join(parent, segment)
-		}
-		return true
-	} catch {
-		return false
-	}
 }
 
 const resolve = {
@@ -132,9 +106,6 @@ export const integration = (options?: UserConfig): UserConfig =>
 				setupFiles: ['./tests/setup.ts'],
 				globalSetup: ['./tests/setupGlobal.ts'],
 				environment: 'node',
-				testTimeout: 120_000,
-				hookTimeout: 120_000,
-				fileParallelism: false,
 			},
 		},
 		options ?? {},
@@ -159,13 +130,6 @@ export const probe = (options?: UserConfig): UserConfig =>
 export default defineConfig({
 	resolve,
 	test: {
-		projects: [
-			srcServer,
-			policy,
-			config,
-			...(isExactCaseFile(resolveWorkspacePath('tests/guides.test.ts')) ? [guides] : []),
-			integration,
-			probe,
-		],
+		projects: [srcServer, policy, config, guides, integration, probe],
 	},
 })
