@@ -1,6 +1,6 @@
 {
 	"name": "@orkestrel/websocket",
-	"version": "0.0.8",
+	"version": "0.0.9",
 	"description": "A dependency-light RFC 6455 WebSocket for Node — native handshake and framing over duplex streams, with a typed emitter surface. Part of the @orkestrel line.",
 	"keywords": [
 		"node",
@@ -65,14 +65,14 @@
 		"prepublishOnly": "npm run format:check && npm run lint:check && npm run check && npm run build && npm test"
 	},
 	"dependencies": {
-		"@orkestrel/emitter": "^0.0.6"
+		"@orkestrel/emitter": "^0.0.7"
 	},
 	"devDependencies": {
 		"@microsoft/api-extractor": "^7.58.12",
-		"@orkestrel/contract": "^0.0.11",
+		"@orkestrel/contract": "^0.0.12",
 		"@orkestrel/guide": "^0.0.11",
 		"@orkestrel/scaffold": "^0.0.38",
-		"@orkestrel/test": "^0.0.5",
+		"@orkestrel/test": "^0.0.6",
 		"@types/node": "^26.1.2",
 		"@vitest/browser-playwright": "^4.1.10",
 		"oxfmt": "^0.61.0",
