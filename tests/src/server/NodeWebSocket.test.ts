@@ -15,8 +15,8 @@ import {
 	WEBSOCKET_OPCODE_PONG,
 	WEBSOCKET_OPCODE_TEXT,
 } from '@src/server'
+import { seededRandom } from '@orkestrel/contract'
 import { createRecorder, requireValue, waitForDelay } from '@orkestrel/test'
-import { createRandom } from '../../setup.js'
 import {
 	duplexPair,
 	flushSocket,
@@ -1339,7 +1339,7 @@ describe('NodeWebSocket — resource limits', () => {
 		await flushSocket()
 
 		// Hundreds of 1-byte continuation fragments, cumulatively exceeding the 64-byte cap.
-		const rng = createRandom(3)
+		const rng = seededRandom(3)
 		const frames: Buffer[] = [
 			frame(WEBSOCKET_OPCODE_TEXT, randomBuffer(rng, 1), { masked: true, fin: false }),
 		]
@@ -1424,7 +1424,7 @@ describe('NodeWebSocket — resource limits', () => {
 		// delivered in a single chunk — the FIRST violation must fire #fail exactly once,
 		// and nothing after it should trigger a second close.
 		const violation = encodeWebSocketFrame(WEBSOCKET_OPCODE_TEXT, 'unmasked breach')
-		const garbage = randomBuffer(createRandom(4), 64)
+		const garbage = randomBuffer(seededRandom(4), 64)
 		client.write(Buffer.concat([violation, garbage]))
 		await flushSocket()
 

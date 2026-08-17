@@ -5,30 +5,15 @@
 // ── Deterministic seeded randomness + text corpus (fuzz/property tests) ──────
 //
 // AGENTS §16.1: fuzz/property/limit tests need the SAME reproducible pseudo-random
-// sequence across a run — a seeded mulberry32 generator — plus a deterministic
-// BMP-safe text builder over it, shared by every node AND browser-side test.
-
-/**
- * Create a deterministic mulberry32 pseudo-random generator seeded by `seed`.
- *
- * @param seed - The 32-bit seed; the same seed always yields the same sequence
- * @returns A function returning the next pseudo-random number in `[0, 1)`
- */
-export function createRandom(seed: number): () => number {
-	let a = seed >>> 0
-	return () => {
-		a = (a + 0x6d2b79f5) | 0
-		let t = Math.imul(a ^ (a >>> 15), 1 | a)
-		t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
-		return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-	}
-}
+// sequence across a run — `@orkestrel/contract`'s `seededRandom` — plus a
+// deterministic BMP-safe text builder over it, shared by every node AND
+// browser-side test.
 
 /**
  * Build a deterministic, BMP-safe, guaranteed-valid-UTF-8 string of `length` code
  * points, sampling each from `rng` while avoiding the surrogate range.
  *
- * @param rng - A seeded generator (see {@link createRandom})
+ * @param rng - A seeded generator (see `seededRandom` from `@orkestrel/contract`)
  * @param length - The number of code points to generate
  * @returns The generated string
  */
@@ -92,10 +77,4 @@ export function nextClose(ws: WebSocket): Promise<CloseEvent> {
 	return new Promise((resolve) => {
 		ws.addEventListener('close', (event) => resolve(event), { once: true })
 	})
-}
-
-/** Whether a repository-relative Vue SFC path belongs to the private browser application. */
-export function isBrowserVuePath(path: string): boolean {
-	const normalized = path.replaceAll('\\', '/')
-	return normalized.startsWith('app/browser/')
 }

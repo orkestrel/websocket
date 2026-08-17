@@ -8,11 +8,11 @@
 // dedicated, opt-in `integration` project instead (run via `npm run test:integration`).
 
 import { describe, expect, inject, it } from 'vitest'
+import { seededRandom } from '@orkestrel/contract'
 import { requireValue } from '@orkestrel/test'
 import {
 	buildText,
 	connect,
-	createRandom,
 	INTEGRATION_CLOSE_CUSTOM_REQUEST,
 	INTEGRATION_CLOSE_NORMAL_REQUEST,
 	INTEGRATION_COUNT_PREFIX,
@@ -88,7 +88,7 @@ describe('WebSocket integration — live client roundtrip', () => {
 describe('WebSocket integration — limit & stress battery', () => {
 	it('round-trips a 2 MB text message byte-exact', async () => {
 		const socket = await connect(inject('wsUrl'))
-		const payload = buildText(createRandom(7), 2_000_000)
+		const payload = buildText(seededRandom(7), 2_000_000)
 		const reply = nextMessage(socket)
 		socket.send(payload)
 		const event = await reply
@@ -99,7 +99,7 @@ describe('WebSocket integration — limit & stress battery', () => {
 
 	it('round-trips a UTF-8 stress string exactly', async () => {
 		const socket = await connect(inject('wsUrl'))
-		const rng = createRandom(11)
+		const rng = seededRandom(11)
 		const sampled = buildText(rng, 200)
 		const payload = `${sampled}🔥🧵👩‍👩‍👧‍👦éCJK漢字中文한글`
 		// The payload guards itself. The echo assertion below compares the reply to this

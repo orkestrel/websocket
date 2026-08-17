@@ -15,8 +15,9 @@ import {
 	WEBSOCKET_OPCODE_PONG,
 	WEBSOCKET_OPCODE_TEXT,
 } from '@src/server'
+import { seededRandom } from '@orkestrel/contract'
 import { requireValue } from '@orkestrel/test'
-import { buildText, createRandom } from '../../setup.js'
+import { buildText } from '../../setup.js'
 import { frame, randomBuffer } from '../../setupServer.js'
 
 // The RFC 6455 codec as pure units (no socket, AGENTS §16) — asserted against the
@@ -369,7 +370,7 @@ describe('isCloseCode', () => {
 // the 126 + 16-bit boundary (126, 127, 65535), the 127 + 64-bit boundary (65536), plus
 // ~5 large payloads up to 200 KB — ~180 payloads total from a single seeded generator.
 function buildCorpus(): readonly Buffer[] {
-	const rng = createRandom(1)
+	const rng = seededRandom(1)
 	const lengths = [0, 1, 125, 126, 127, 65_535, 65_536]
 	const large = [70_000, 90_000, 120_000, 150_000, 200_000]
 	const corpus: Buffer[] = []
@@ -406,7 +407,7 @@ describe('codec properties — seeded round trips', () => {
 
 describe('codec properties — incomplete input', () => {
 	it('never throws on every truncation of a valid frame (returns undefined, never a partial)', () => {
-		const rng = createRandom(3)
+		const rng = seededRandom(3)
 		const wires = [
 			frame(WEBSOCKET_OPCODE_TEXT, randomBuffer(rng, 5)), // 7-bit form, unmasked
 			frame(WEBSOCKET_OPCODE_TEXT, randomBuffer(rng, 5), { masked: true }), // 7-bit form, masked
@@ -438,7 +439,7 @@ describe('codec properties — incomplete input', () => {
 	})
 
 	it('never throws on arbitrary random buffers — result is undefined or well-formed', () => {
-		const rng = createRandom(2)
+		const rng = seededRandom(2)
 		for (let index = 0; index < 1000; index += 1) {
 			const length = Math.floor(rng() * 301)
 			const buffer = randomBuffer(rng, length)
@@ -455,7 +456,7 @@ describe('codec properties — incomplete input', () => {
 
 describe('codec properties — measurement and parsing agree', () => {
 	it('measures the declared length across forms and agrees with parse', () => {
-		const rng = createRandom(4)
+		const rng = seededRandom(4)
 		const cases: ReadonlyArray<{ readonly length: number; readonly masked: boolean }> = [
 			{ length: 10, masked: false },
 			{ length: 10, masked: true },
@@ -477,7 +478,7 @@ describe('codec properties — measurement and parsing agree', () => {
 	})
 
 	it('resolves the declared length as soon as the length PREFIX is buffered — earlier than parse', () => {
-		const rng = createRandom(5)
+		const rng = seededRandom(5)
 		const payload = randomBuffer(rng, 300)
 		const wire = encodeWebSocketFrame(WEBSOCKET_OPCODE_BINARY, payload, { masked: true }) // 126-form + mask
 
@@ -498,7 +499,7 @@ describe('codec properties — measurement and parsing agree', () => {
 
 describe('codec properties — mask XOR is an involution', () => {
 	it('masking then unmasking with the same key recovers the original bytes', () => {
-		const rng = createRandom(6)
+		const rng = seededRandom(6)
 		for (let index = 0; index < 100; index += 1) {
 			const length = Math.floor(rng() * 200)
 			const buf = randomBuffer(rng, length)
@@ -523,7 +524,7 @@ describe('codec properties — mask XOR is an involution', () => {
 
 describe('codec properties — UTF-8 acceptance', () => {
 	it('decodes a valid UTF-8 corpus (buildText samples + known multibyte) exactly', () => {
-		const rng = createRandom(7)
+		const rng = seededRandom(7)
 		for (let index = 0; index < 20; index += 1) {
 			const text = buildText(rng, Math.floor(rng() * 40))
 			const bytes = Buffer.from(text, 'utf-8')

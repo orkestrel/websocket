@@ -11,6 +11,7 @@ import type { TestProject } from 'vitest/node'
 import { createServer } from 'node:http'
 import type { Server } from 'node:http'
 import type { Socket } from 'node:net'
+import { createLoopback } from '@orkestrel/test/server'
 import { createNodeWebSocket } from '@src/server'
 import type { NodeWebSocketInterface } from '@src/server'
 import {
@@ -68,19 +69,13 @@ export async function setup({ provide }: TestProject): Promise<() => Promise<voi
 		sockets.add(ws)
 	})
 
-	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+	const loopback = await createLoopback(server)
 
-	const address = server.address()
-	const port = address !== null && typeof address === 'object' ? address.port : undefined
-	if (port === undefined) throw new Error('Integration server failed to bind a port')
-
-	provide('wsUrl', `ws://127.0.0.1:${port}`)
+	provide('wsUrl', `ws://127.0.0.1:${loopback.port}`)
 
 	return async () => {
 		for (const ws of sockets) ws.destroy()
 		sockets.clear()
-		await new Promise<void>((resolve, reject) => {
-			server.close((error) => (error ? reject(error) : resolve()))
-		})
+		await loopback.destroy()
 	}
 }
