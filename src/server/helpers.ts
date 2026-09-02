@@ -1,12 +1,14 @@
 import type { WebSocketEncodeOptions, WebSocketFrame } from './types.js'
 import { createHash, randomBytes } from 'node:crypto'
 import { WEBSOCKET_GUID } from './constants.js'
+import { WebSocketError } from './errors.js'
 
 // The RFC 6455 codec and boundary guards — pure, exported, and exhaustively tested.
 // `computeWebSocketAccept` derives the handshake token; the `isWebSocket*` guards
 // validate upgrade/header invariants; `measureWebSocketFrame` and
 // `parseWebSocketFrame` decode the next frame incrementally; `encodeWebSocketFrame`
-// builds the inverse wire representation.
+// builds the inverse wire representation and refuses an unrepresentable frame header
+// with a `FRAME`-coded `WebSocketError`.
 //
 /**
  * Compute the `Sec-WebSocket-Accept` response value for an RFC 6455 upgrade.
@@ -60,7 +62,7 @@ export function isWebSocketKey(key: string): boolean {
  *
  * @example
  * ```ts
- * if (!isWebSocketProtocol(protocol)) throw new RangeError('invalid protocol')
+ * if (!isWebSocketProtocol(protocol)) socket.destroy()
  * ```
  */
 export function isWebSocketProtocol(protocol: string): boolean {
@@ -174,38 +176,6 @@ export function measureWebSocketFrame(buffer: Buffer): number | undefined {
 }
 
 /**
- * Whether the next frame uses the shortest valid RFC 6455 payload-length encoding.
- *
- * @remarks
- * Returns `undefined` until the complete length prefix is buffered. The 16-bit form
- * is canonical only for lengths at least 126; the 64-bit form only for lengths at
- * least 65,536 and with its most-significant bit clear (RFC 6455 §5.2).
- *
- * @param buffer - The accumulation buffer containing the next frame header
- * @returns Its canonicality, or `undefined` while the length prefix is incomplete
- *
- * @example
- * ```ts
- * if (isWebSocketFrameCanonical(buffer) === false) fail(WEBSOCKET_CLOSE_PROTOCOL)
- * ```
- */
-export function isWebSocketFrameCanonical(buffer: Buffer): boolean | undefined {
-	if (buffer.length < 2) return undefined
-
-	const lengthCode = buffer.readUInt8(1) & 0x7f
-	if (lengthCode < 126) return true
-	if (lengthCode === 126) {
-		if (buffer.length < 4) return undefined
-		return buffer.readUInt16BE(2) >= 126
-	}
-	if (buffer.length < 10) return undefined
-	const high = buffer.readUInt32BE(2)
-	const low = buffer.readUInt32BE(6)
-	if ((high & 0x8000_0000) !== 0) return false
-	return high > 0 || low >= 65_536
-}
-
-/**
  * Decode a byte sequence as strict UTF-8, or signal it is malformed.
  *
  * @remarks
@@ -260,7 +230,7 @@ export function isCloseCode(code: number): boolean {
 }
 
 /**
- * Encode a single RFC 6455 frame to its wire bytes — the inverse of
+ * Encodes a single RFC 6455 frame to its wire bytes — the inverse of
  * {@link parseWebSocketFrame}.
  *
  * @remarks
@@ -277,6 +247,7 @@ export function isCloseCode(code: number): boolean {
  * @param payload - The payload, a `Buffer` or a UTF-8 `string`
  * @param options - Masking control ({@link WebSocketEncodeOptions}); defaults to unmasked
  * @returns The complete frame as wire bytes
+ * @throws A {@link WebSocketError} coded `FRAME` when `opcode` is outside the four-bit wire field, when `options.mask` is not 4 bytes, or when `options.mask` is supplied without `masked: true`
  */
 export function encodeWebSocketFrame(
 	opcode: number,
@@ -284,13 +255,15 @@ export function encodeWebSocketFrame(
 	options?: WebSocketEncodeOptions,
 ): Buffer {
 	if (!Number.isInteger(opcode) || opcode < 0 || opcode > 0x0f) {
-		throw new RangeError('opcode must be an integer between 0 and 15')
+		throw new WebSocketError('FRAME', 'opcode must be an integer between 0 and 15', { opcode })
 	}
 	if (options?.mask !== undefined && options.mask.length !== 4) {
-		throw new RangeError('mask must contain exactly 4 bytes')
+		throw new WebSocketError('FRAME', 'mask must contain exactly 4 bytes', {
+			size: options.mask.length,
+		})
 	}
 	if (options?.mask !== undefined && options.masked !== true) {
-		throw new RangeError('mask requires masked: true')
+		throw new WebSocketError('FRAME', 'mask requires masked: true')
 	}
 	const body = typeof payload === 'string' ? Buffer.from(payload, 'utf-8') : payload
 	const length = body.length

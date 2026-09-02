@@ -3,11 +3,14 @@ import { describe, expect, it } from 'vitest'
 import {
 	createNodeWebSocket,
 	encodeWebSocketFrame,
+	isWebSocketError,
 	WEBSOCKET_CLOSE_INVALID,
 	WEBSOCKET_CLOSE_NORMAL,
 	WEBSOCKET_CLOSE_PROTOCOL,
+	WEBSOCKET_CLOSE_REASON_MAXLEN,
 	WEBSOCKET_CLOSE_TOOBIG,
 	WEBSOCKET_CLOSE_UNSUPPORTED,
+	WEBSOCKET_CONTROL_MAXLEN,
 	WEBSOCKET_OPCODE_BINARY,
 	WEBSOCKET_OPCODE_CLOSE,
 	WEBSOCKET_OPCODE_CONTINUATION,
@@ -16,7 +19,7 @@ import {
 	WEBSOCKET_OPCODE_TEXT,
 } from '@src/server'
 import { seededRandom } from '@orkestrel/contract'
-import { createRecorder, requireValue, waitForDelay } from '@orkestrel/test'
+import { captureError, createRecorder, requireValue, waitForDelay } from '@orkestrel/test'
 import {
 	duplexPair,
 	flushSocket,
@@ -94,7 +97,8 @@ describe('NodeWebSocket — option validation', () => {
 			const received: Buffer[] = []
 			client.on('data', (chunk: Buffer) => received.push(chunk))
 
-			expect(() => createNodeWebSocket({ socket: server, ...options })).toThrow(RangeError)
+			const caught = captureError(() => createNodeWebSocket({ socket: server, ...options }))
+			expect(isWebSocketError(caught) ? caught.code : 'not-websocket').toBe('OPTION')
 			await flushSocket()
 
 			expect(received).toEqual([])
@@ -108,7 +112,9 @@ describe('NodeWebSocket — option validation', () => {
 
 	it('rejects a subprotocol in client mode because no server handshake can carry it', () => {
 		const [socket, peer] = duplexPair()
-		expect(() => createNodeWebSocket({ socket, protocol: 'mcp' })).toThrow(RangeError)
+		const caught = captureError(() => createNodeWebSocket({ socket, protocol: 'mcp' }))
+		expect(isWebSocketError(caught) ? caught.code : 'not-websocket').toBe('OPTION')
+		expect(isWebSocketError(caught) ? caught.context : undefined).toEqual({ protocol: 'mcp' })
 		socket.destroy()
 		peer.destroy()
 	})
@@ -122,7 +128,9 @@ describe('NodeWebSocket — option validation', () => {
 			{ timeout: 1.5 },
 		]) {
 			const [socket, peer] = duplexPair()
-			expect(() => createNodeWebSocket({ socket, ...options })).toThrow(RangeError)
+			const caught = captureError(() => createNodeWebSocket({ socket, ...options }))
+			expect(isWebSocketError(caught) ? caught.code : 'not-websocket').toBe('OPTION')
+			expect(isWebSocketError(caught) ? caught.context : undefined).toEqual(options)
 			expect(getEventListeners(socket, 'data')).toHaveLength(0)
 			expect(getEventListeners(socket, 'close')).toHaveLength(0)
 			expect(getEventListeners(socket, 'error')).toHaveLength(0)
@@ -314,9 +322,24 @@ describe('NodeWebSocket — close', () => {
 		const ws = createNodeWebSocket({ socket: server, key: CLIENT_KEY })
 		await flushSocket()
 
-		expect(() => ws.ping('a'.repeat(126))).toThrow(RangeError)
-		expect(() => ws.close(1000.5)).toThrow(RangeError)
-		expect(() => ws.close(WEBSOCKET_CLOSE_NORMAL, 'a'.repeat(124))).toThrow(RangeError)
+		const oversize = captureError(() => ws.ping('a'.repeat(126)))
+		expect(isWebSocketError(oversize) ? oversize.code : 'not-websocket').toBe('PAYLOAD')
+		expect(isWebSocketError(oversize) ? oversize.context : undefined).toEqual({
+			size: 126,
+			limit: WEBSOCKET_CONTROL_MAXLEN,
+		})
+
+		const fractional = captureError(() => ws.close(1000.5))
+		expect(isWebSocketError(fractional) ? fractional.code : 'not-websocket').toBe('CODE')
+		expect(isWebSocketError(fractional) ? fractional.context : undefined).toEqual({ code: 1000.5 })
+
+		const longReason = captureError(() => ws.close(WEBSOCKET_CLOSE_NORMAL, 'a'.repeat(124)))
+		expect(isWebSocketError(longReason) ? longReason.code : 'not-websocket').toBe('PAYLOAD')
+		expect(isWebSocketError(longReason) ? longReason.context : undefined).toEqual({
+			size: 124,
+			limit: WEBSOCKET_CLOSE_REASON_MAXLEN,
+		})
+
 		expect(ws.readyState).toBe(1)
 
 		ws.destroy()

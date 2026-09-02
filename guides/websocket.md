@@ -39,19 +39,26 @@ createServer().on('upgrade', (request, socket, head) => {
 | --------------- | ----- | ---------------------------------------------------------------------------------------------------------------------- |
 | `NodeWebSocket` | class | The WebSocket — the handshake, frame dispatch (text + continuation reassembly), auto-pong, close, and a §13 `emitter`. |
 
+### Errors
+
+| API                | Kind     | Summary                                                                                             |
+| ------------------ | -------- | --------------------------------------------------------------------------------------------------- |
+| `WebSocketError`   | class    | A refused caller-supplied value, carrying a machine-readable `code` and an optional `context`.      |
+| `isWebSocketError` | function | Whether a caught value is a `WebSocketError`, narrowing it so a `catch` can branch on `error.code`. |
+
 ### Codec helpers
 
-| API                         | Kind     | Summary                                                                                                                                     |
-| --------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `computeWebSocketAccept`    | function | Derive the `Sec-WebSocket-Accept` token (base64 SHA-1 of the key + `WEBSOCKET_GUID`).                                                       |
-| `isWebSocketKey`            | function | Whether a value is the canonical base64 encoding of a 16-byte `Sec-WebSocket-Key`.                                                          |
-| `isWebSocketProtocol`       | function | Whether a value is one valid HTTP-token WebSocket subprotocol (no separators or header injection).                                          |
-| `parseWebSocketFrame`       | function | Decode one frame off a buffer; `undefined` when the buffer is incomplete (so the caller accumulates).                                       |
-| `measureWebSocketFrame`     | function | Read a frame's declared payload length off the buffer without buffering the payload; `undefined` until the length field itself is complete. |
-| `isWebSocketFrameCanonical` | function | Whether the next frame uses the shortest valid length encoding; `undefined` until its length prefix is complete.                            |
-| `parseUTF8`                 | function | Decode bytes as strict UTF-8; `undefined` when the sequence is malformed.                                                                   |
-| `isCloseCode`               | function | Whether a numeric value is a valid RFC 6455 close status code to receive (extended with the IANA-registered `1012`–`1014` interop codes).   |
-| `encodeWebSocketFrame`      | function | Encode one frame to wire bytes (the inverse of `parseWebSocketFrame`); unmasked by default, optionally masked.                              |
+| API                       | Kind     | Summary                                                                                                                                     |
+| ------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `computeWebSocketAccept`  | function | Derive the `Sec-WebSocket-Accept` token (base64 SHA-1 of the key + `WEBSOCKET_GUID`).                                                       |
+| `isWebSocketKey`          | function | Whether a value is the canonical base64 encoding of a 16-byte `Sec-WebSocket-Key`.                                                          |
+| `isWebSocketProtocol`     | function | Whether a value is one valid HTTP-token WebSocket subprotocol (no separators or header injection).                                          |
+| `parseWebSocketFrame`     | function | Decode one frame off a buffer; `undefined` when the buffer is incomplete (so the caller accumulates).                                       |
+| `measureWebSocketFrame`   | function | Read a frame's declared payload length off the buffer without buffering the payload; `undefined` until the length field itself is complete. |
+| `parseWebSocketCanonical` | function | Read whether the next frame uses the shortest valid length encoding; `undefined` until its length prefix is complete.                       |
+| `parseUTF8`               | function | Decode bytes as strict UTF-8; `undefined` when the sequence is malformed.                                                                   |
+| `isCloseCode`             | function | Whether a numeric value is a valid RFC 6455 close status code to receive (extended with the IANA-registered `1012`–`1014` interop codes).   |
+| `encodeWebSocketFrame`    | function | Encode one frame to wire bytes (the inverse of `parseWebSocketFrame`); unmasked by default, optionally masked.                              |
 
 ### Constants
 
@@ -85,11 +92,9 @@ createServer().on('upgrade', (request, socket, head) => {
 | API                      | Kind      | Summary                                                                                                                         |
 | ------------------------ | --------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | `WebSocketReadyState`    | type      | The four browser-compatible ready-state values (`0` \| `1` \| `2` \| `3`).                                                      |
-| `WebSocketCloseCode`     | type      | A WebSocket close status code (`number`).                                                                                       |
 | `WebSocketFrame`         | interface | A parsed frame — `fin` / `opcode` / `payload` / `consumed` / `masked` / `rsv`.                                                  |
 | `WebSocketEncodeOptions` | interface | `encodeWebSocketFrame` masking control — `masked` and an optional explicit `mask`.                                              |
-| `WebSocketMessage`       | interface | A decoded text message (`data`).                                                                                                |
-| `WebSocketClose`         | interface | The close metadata — `code` / `reason`.                                                                                         |
+| `WebSocketErrorCode`     | type      | The subject a `WebSocketError` names as refused — `OPTION` / `PAYLOAD` / `CODE` / `FRAME`.                                      |
 | `NodeWebSocketEventMap`  | type      | The event map — `open` / `message` / `close` / `error` / `ping` / `pong`.                                                       |
 | `NodeWebSocketOptions`   | interface | Options for `createNodeWebSocket` (`socket` / `key` / `head` / `protocol` / `on` / `error` / `payload` / `timeout` / `signal`). |
 | `NodeWebSocketInterface` | interface | The wrapper contract.                                                                                                           |
@@ -102,12 +107,12 @@ The public methods of the behavioral interface — its `readonly` data members (
 
 #### `NodeWebSocketInterface`
 
-| Method    | Returns | Behavior                                                                                                                                                                                                                                                                                                                                                                                                            |
-| --------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `send`    | `void`  | Frame `data` as a UTF-8 text frame and write it (masked in client mode, unmasked in server mode). No-op unless `readyState` is open.                                                                                                                                                                                                                                                                                |
-| `ping`    | `void`  | Write a ping frame with an optional payload; the peer is expected to answer with a pong (surfaced as `pong`). No-op unless open; throws `RangeError` when the UTF-8 payload exceeds `WEBSOCKET_CONTROL_MAXLEN`.                                                                                                                                                                                                     |
-| `close`   | `void`  | Start the closing handshake: move to `closing`, write a close frame (the 2-byte big-endian `code` — default `WEBSOCKET_CLOSE_NORMAL` — plus optional `reason`), and end the writable side. Invalid/fractional codes and reasons over `WEBSOCKET_CLOSE_REASON_MAXLEN` throw `RangeError` without changing state. The final `close` event fires once the peer echoes or the socket ends. A second `close` is a no-op. |
-| `destroy` | `void`  | Abort immediately: detach the wrapper's domain socket listeners, destroy the socket, emit a final `close`, and tear the emitter down. Idempotent — a hard stop, not a handshake.                                                                                                                                                                                                                                    |
+| Method    | Returns | Behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| --------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `send`    | `void`  | Frame `data` as a UTF-8 text frame and write it (masked in client mode, unmasked in server mode). No-op unless `readyState` is open.                                                                                                                                                                                                                                                                                                                                              |
+| `ping`    | `void`  | Write a ping frame with an optional payload; the peer is expected to answer with a pong (surfaced as `pong`). No-op unless open; throws a `PAYLOAD`-coded `WebSocketError` when the UTF-8 payload exceeds `WEBSOCKET_CONTROL_MAXLEN`.                                                                                                                                                                                                                                             |
+| `close`   | `void`  | Start the closing handshake: move to `closing`, write a close frame (the 2-byte big-endian `code` — default `WEBSOCKET_CLOSE_NORMAL` — plus optional `reason`), and end the writable side. An invalid or fractional code throws a `CODE`-coded `WebSocketError` and a reason over `WEBSOCKET_CLOSE_REASON_MAXLEN` a `PAYLOAD`-coded one, in each case without changing state. The final `close` event fires once the peer echoes or the socket ends. A second `close` is a no-op. |
+| `destroy` | `void`  | Abort immediately: detach the wrapper's domain socket listeners, destroy the socket, emit a final `close`, and tear the emitter down. Idempotent — a hard stop, not a handshake.                                                                                                                                                                                                                                                                                                  |
 
 ## Contract
 
@@ -116,11 +121,41 @@ These invariants hold across `src/server` ↔ `websocket.md`:
 1. **DOC ↔ SOURCE bijection.** Every row in the `## Surface` tables is a real export of the module, and every export appears as a Surface row — exhaustive, both directions (AGENTS §22).
 2. **Wire-only, schema-agnostic.** The wrapper speaks the RFC 6455 frame protocol and nothing else — no MCP, no JSON-RPC, no message schema. A higher transport is built _on_ it (the same minimal-interface discipline, AGENTS §21).
 3. **The codec and boundary guards are pure and exhaustively pinned.** The helpers are tested against RFC 6455's worked vectors, malformed handshake values, non-canonical length encodings, truncation at every byte, and seeded round trips. `parseWebSocketFrame` returns `undefined` on an **incomplete** buffer (the caller accumulates across `data` chunks); `encode` and `parse` are exact inverses for valid frames.
-4. **Server vs. client is the single `key` decision.** A canonical 16-byte-base64 `key` (the client's `Sec-WebSocket-Key`) selects SERVER mode: the wrapper writes the `101 Switching Protocols` handshake with `Sec-WebSocket-Accept: computeWebSocketAccept(key)` and sends **unmasked** frames. No `key` is CLIENT mode: no handshake is written and every outgoing frame is **masked** — RFC 6455 §5.3 mandates client→server masking. A negotiated `protocol` is accepted only in server mode and must pass `isWebSocketProtocol`; malformed constructor options throw before the wrapper writes to or assumes ownership of the socket.
+4. **Server vs. client is the single `key` decision.** A canonical 16-byte-base64 `key` (the client's `Sec-WebSocket-Key`) selects SERVER mode: the wrapper writes the `101 Switching Protocols` handshake with `Sec-WebSocket-Accept: computeWebSocketAccept(key)` and sends **unmasked** frames. No `key` is CLIENT mode: no handshake is written and every outgoing frame is **masked** — RFC 6455 §5.3 mandates client→server masking. A negotiated `protocol` is accepted only in server mode and must pass `isWebSocketProtocol`; a malformed constructor option throws an `OPTION`-coded `WebSocketError` before the wrapper writes to or assumes ownership of the socket.
 5. **One accumulation buffer, drained frame by frame.** Incoming `data` chunks append to a buffer that is decoded with `parseWebSocketFrame` in a loop, slicing each frame's `consumed` bytes off the front and re-parsing until a partial frame remains. Every iteration independently checks canonical encoding and the declared payload cap, including the second and later frames in one chunk. Dispatch by opcode: a data frame (text, binary, or `WEBSOCKET_OPCODE_CONTINUATION`) buffers its fragments and emits one `message` (decoded UTF-8) at `fin`; a ping emits `ping` and is **auto-answered with a pong**; a pong emits `pong`; a close is echoed back (RFC 6455 §5.5.1), ends the socket, and emits the final `close`.
 6. **Observable, and a faulty listener can never sink the socket (§13).** The wrapper exposes a typed `emitter`; listener isolation is the emitter's job. Two error channels stay distinct: an underlying socket fault emits the map's domain `error` event and terminates the wrapper, whereas a listener that _throws_ is caught by the emitter and routed to its own `error` handler (the `error` constructor option), never re-entered as a domain event. Every terminal path detaches only the wrapper's domain `data` / `close` / `error` listeners and leaves one durable no-op socket `error` sink, so a late peer RST cannot become an uncaught Node exception; caller-owned listeners remain untouched.
-7. **A malformed or over-limit peer fails the connection, never the process.** `isWebSocketFrameCanonical` rejects non-minimal extended lengths and a set 64-bit high bit with `WEBSOCKET_CLOSE_PROTOCOL`; `measureWebSocketFrame` rejects each frame whose declared length exceeds `payload` (default `WEBSOCKET_MAX_PAYLOAD`) before its bytes are buffered, and the same cap applies to a reassembled fragmented message's total size — either cap breach closes `WEBSOCKET_CLOSE_TOOBIG`. A text payload that fails `parseUTF8` closes `WEBSOCKET_CLOSE_INVALID`; a received close code that fails `isCloseCode` closes `WEBSOCKET_CLOSE_PROTOCOL`; a fragmented or oversized control frame, nonzero `rsv`, reserved opcode, or wrong mask direction also closes `WEBSOCKET_CLOSE_PROTOCOL`. `close()` uses a configurable timeout so a silent peer cannot leak the handle open. Validation failures flush their close frame before the hard-teardown fallback destroys the socket.
+7. **A malformed or over-limit peer fails the connection, never the process.** `parseWebSocketCanonical` rejects non-minimal extended lengths and a set 64-bit high bit with `WEBSOCKET_CLOSE_PROTOCOL`; `measureWebSocketFrame` rejects each frame whose declared length exceeds `payload` (default `WEBSOCKET_MAX_PAYLOAD`) before its bytes are buffered, and the same cap applies to a reassembled fragmented message's total size — either cap breach closes `WEBSOCKET_CLOSE_TOOBIG`. A text payload that fails `parseUTF8` closes `WEBSOCKET_CLOSE_INVALID`; a received close code that fails `isCloseCode` closes `WEBSOCKET_CLOSE_PROTOCOL`; a fragmented or oversized control frame, nonzero `rsv`, reserved opcode, or wrong mask direction also closes `WEBSOCKET_CLOSE_PROTOCOL`. `close()` uses a configurable timeout so a silent peer cannot leak the handle open. Validation failures flush their close frame before the hard-teardown fallback destroys the socket.
 8. **An `AbortSignal` is an external cancellation seam.** `signal` (composing with `@orkestrel/abort` / `@orkestrel/timeout`'s native `AbortSignal`s) tears the socket down via `destroy()` on abort — immediately after construction if already aborted, otherwise on the signal's `abort` event. The listener is removed on every terminal path (`#finish` and `destroy`) so a long-lived, shared signal never accumulates listeners from closed sockets.
+
+## Errors
+
+`WebSocketError` is the one failure type, carrying a stable machine-readable `code`. Narrow a caught value with `isWebSocketError`, then branch on `code`.
+
+| Code      | Raised when                                                                                                                                                              |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `OPTION`  | `createNodeWebSocket` refused a `NodeWebSocketOptions` member: `payload`, `timeout`, `key`, `protocol`, or a `protocol` given without a server `key`.                    |
+| `PAYLOAD` | An outbound control-frame payload exceeded its RFC 6455 §5.5 cap: `ping` data past `WEBSOCKET_CONTROL_MAXLEN`, or a `close` reason past `WEBSOCKET_CLOSE_REASON_MAXLEN`. |
+| `CODE`    | `close` received a status code `isCloseCode` refuses.                                                                                                                    |
+| `FRAME`   | `encodeWebSocketFrame` refused a frame-header argument: an opcode outside the four-bit wire field, a `mask` that is not 4 bytes, or a `mask` without `masked: true`.     |
+
+Every refusal is a caller-supplied value the wire protocol cannot carry, and each throws before it writes a byte: an `OPTION` throws before the wrapper writes to or assumes ownership of the socket, a `PAYLOAD` and a `CODE` throw without writing a frame or changing `readyState`, and a `FRAME` throws out of the pure encoder, which touches no socket at all. A **peer's** protocol violation is not a `WebSocketError`: it closes the connection with the matching `WEBSOCKET_CLOSE_*` status code and emits `close`, per the preceding Contract invariant.
+
+`context` carries the refused value under a key naming it — the offending option for an `OPTION`, `size` and the `limit` it exceeded for a `PAYLOAD`, the refused `code` for a `CODE`, and `opcode` or the mask's `size` for a `FRAME`. A `mask` supplied without `masked: true` carries no `context`; the message names the fault.
+
+```ts
+import { createNodeWebSocket, isWebSocketError } from '@orkestrel/websocket'
+
+server.on('upgrade', (request, socket, head) => {
+	try {
+		createNodeWebSocket({ socket, key: request.headers['sec-websocket-key'], head })
+	} catch (error) {
+		if (isWebSocketError(error) && error.code === 'OPTION') {
+			socket.write('HTTP/1.1 400 Bad Request\r\n\r\n')
+			socket.destroy()
+		}
+	}
+})
+```
 
 ## Patterns
 
@@ -202,6 +237,7 @@ ws.destroy()
 
 - [`tests/guides.test.ts`](../tests/guides.test.ts) — the `## Surface` ↔ `src/server` bijection and the `## Methods` ↔ interface/class method parity.
 - [`tests/src/server/helpers.test.ts`](../tests/src/server/helpers.test.ts) — the RFC 6455 codec as pure units against the spec's own byte vectors: the §1.3 handshake accept token, the unmasked + masked "Hello" frames (§5.7), the 7/16/64-bit length-form boundaries (125 / 126 / 65 536), the control opcodes, an incomplete buffer → `undefined` (split mid-header, mid-mask, mid-payload), a frame with trailing bytes (`consumed` recovers the remainder), and the encode↔parse inverse for masked and unmasked frames.
+- [`tests/src/server/parsers.test.ts`](../tests/src/server/parsers.test.ts) — the RFC 6455 §5.2 minimal-length-encoding coercer: each shortest form accepted, an incomplete length prefix answered `undefined`, and a non-minimal extended length or a set 64-bit high bit rejected.
 - [`tests/src/server/NodeWebSocket.test.ts`](../tests/src/server/NodeWebSocket.test.ts) — the wrapper driven end to end over an in-memory `node:stream` Duplex pair (two cross-wired `PassThrough`s — a real bidirectional socket, no mock): the 101 handshake (with subprotocol echo), a masked client text frame → `message`, continuation-fragment reassembly, two frames in one chunk, `send` → an unmasked readable frame, ping → auto-pong, the close handshake + `close` event, `destroy` idempotency, and §13 observer-error isolation.
 - [`tests/integration.test.ts`](../tests/integration.test.ts) — the public factory driven by native Chromium `WebSocket`s against a real Node HTTP upgrade server: handshake, multibyte and 2 MB payloads, binary rejection, client/server closes, ordered bursts, concurrency, churn, and reconnect.
 

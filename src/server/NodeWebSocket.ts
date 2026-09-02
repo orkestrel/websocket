@@ -11,13 +11,14 @@ import {
 	computeWebSocketAccept,
 	encodeWebSocketFrame,
 	isCloseCode,
-	isWebSocketFrameCanonical,
 	isWebSocketKey,
 	isWebSocketProtocol,
 	measureWebSocketFrame,
 	parseUTF8,
 	parseWebSocketFrame,
 } from './helpers.js'
+import { parseWebSocketCanonical } from './parsers.js'
+import { WebSocketError } from './errors.js'
 import {
 	WEBSOCKET_CLOSE_INVALID,
 	WEBSOCKET_CLOSE_NORMAL,
@@ -86,20 +87,30 @@ export class NodeWebSocket implements NodeWebSocketInterface {
 	constructor(options: NodeWebSocketOptions) {
 		const payload = options.payload ?? WEBSOCKET_MAX_PAYLOAD
 		if (!Number.isSafeInteger(payload) || payload < 0) {
-			throw new RangeError('payload must be a non-negative safe integer')
+			throw new WebSocketError('OPTION', 'payload must be a non-negative safe integer', {
+				payload,
+			})
 		}
 		const timeout = options.timeout ?? WEBSOCKET_CLOSE_TIMEOUT_MS
 		if (!Number.isSafeInteger(timeout) || timeout < 0) {
-			throw new RangeError('timeout must be a non-negative safe integer')
+			throw new WebSocketError('OPTION', 'timeout must be a non-negative safe integer', {
+				timeout,
+			})
 		}
 		if (options.key !== undefined && !isWebSocketKey(options.key)) {
-			throw new RangeError('key must be the canonical base64 encoding of 16 bytes')
+			throw new WebSocketError('OPTION', 'key must be the canonical base64 encoding of 16 bytes', {
+				key: options.key,
+			})
 		}
 		if (options.protocol !== undefined && !isWebSocketProtocol(options.protocol)) {
-			throw new RangeError('protocol must be a valid WebSocket subprotocol token')
+			throw new WebSocketError('OPTION', 'protocol must be a valid WebSocket subprotocol token', {
+				protocol: options.protocol,
+			})
 		}
 		if (options.protocol !== undefined && options.key === undefined) {
-			throw new RangeError('protocol requires a server key')
+			throw new WebSocketError('OPTION', 'protocol requires a server key', {
+				protocol: options.protocol,
+			})
 		}
 
 		this.#emitter = new Emitter({
@@ -177,8 +188,13 @@ export class NodeWebSocket implements NodeWebSocketInterface {
 
 	ping(data?: string): void {
 		if (this.#readyState !== WEBSOCKET_READY_OPEN) return
-		if (data !== undefined && Buffer.byteLength(data, 'utf-8') > WEBSOCKET_CONTROL_MAXLEN) {
-			throw new RangeError('ping payload exceeds 125 bytes')
+		const size = data === undefined ? 0 : Buffer.byteLength(data, 'utf-8')
+		if (size > WEBSOCKET_CONTROL_MAXLEN) {
+			throw new WebSocketError(
+				'PAYLOAD',
+				`ping payload exceeds ${WEBSOCKET_CONTROL_MAXLEN} bytes`,
+				{ size, limit: WEBSOCKET_CONTROL_MAXLEN },
+			)
 		}
 		this.#write(
 			WEBSOCKET_OPCODE_PING,
@@ -193,12 +209,16 @@ export class NodeWebSocket implements NodeWebSocketInterface {
 		) {
 			return
 		}
-		if (code !== undefined && !isCloseCode(code)) throw new RangeError('invalid close code')
-		if (
-			reason !== undefined &&
-			Buffer.byteLength(reason, 'utf-8') > WEBSOCKET_CLOSE_REASON_MAXLEN
-		) {
-			throw new RangeError(`close reason exceeds ${WEBSOCKET_CLOSE_REASON_MAXLEN} bytes`)
+		if (code !== undefined && !isCloseCode(code)) {
+			throw new WebSocketError('CODE', 'invalid close code', { code })
+		}
+		const size = reason === undefined ? 0 : Buffer.byteLength(reason, 'utf-8')
+		if (size > WEBSOCKET_CLOSE_REASON_MAXLEN) {
+			throw new WebSocketError(
+				'PAYLOAD',
+				`close reason exceeds ${WEBSOCKET_CLOSE_REASON_MAXLEN} bytes`,
+				{ size, limit: WEBSOCKET_CLOSE_REASON_MAXLEN },
+			)
 		}
 		this.#readyState = WEBSOCKET_READY_CLOSING
 		this.#code = code ?? WEBSOCKET_CLOSE_NORMAL
@@ -230,7 +250,7 @@ export class NodeWebSocket implements NodeWebSocketInterface {
 	// it off; stops when a partial frame remains (parse returns `undefined`).
 	#drain(): void {
 		for (;;) {
-			const canonical = isWebSocketFrameCanonical(this.#buffer)
+			const canonical = parseWebSocketCanonical(this.#buffer)
 			if (canonical === false) {
 				this.#fail(WEBSOCKET_CLOSE_PROTOCOL)
 				return

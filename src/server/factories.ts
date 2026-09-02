@@ -2,7 +2,7 @@ import type { NodeWebSocketInterface, NodeWebSocketOptions } from './types.js'
 import { NodeWebSocket } from './NodeWebSocket.js'
 
 /**
- * Create a server-native WebSocket over a raw upgraded `node:stream` Duplex socket.
+ * Creates a server-native WebSocket over a raw upgraded `node:stream` Duplex socket.
  *
  * @remarks
  * The construction entry point for the {@link NodeWebSocketInterface} (AGENTS §8). Pass
@@ -16,6 +16,7 @@ import { NodeWebSocket } from './NodeWebSocket.js'
  * @param options - The {@link NodeWebSocketOptions} (`socket`, optional `key` / `head` /
  *   `protocol` / `on`)
  * @returns A typed {@link NodeWebSocketInterface}
+ * @throws A `WebSocketError` coded `OPTION` when `payload`, `timeout`, `key`, or `protocol` is refused, thrown before the wrapper writes to or assumes ownership of the `socket`
  *
  * @example
  * ```ts

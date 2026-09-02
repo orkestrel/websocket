@@ -3,7 +3,7 @@ import {
 	computeWebSocketAccept,
 	encodeWebSocketFrame,
 	isCloseCode,
-	isWebSocketFrameCanonical,
+	isWebSocketError,
 	isWebSocketKey,
 	isWebSocketProtocol,
 	measureWebSocketFrame,
@@ -16,7 +16,7 @@ import {
 	WEBSOCKET_OPCODE_TEXT,
 } from '@src/server'
 import { seededRandom } from '@orkestrel/contract'
-import { requireValue } from '@orkestrel/test'
+import { captureError, requireValue } from '@orkestrel/test'
 import { buildText } from '../../setup.js'
 import { frame, randomBuffer } from '../../setupServer.js'
 
@@ -98,22 +98,29 @@ describe('encodeWebSocketFrame — RFC byte vectors', () => {
 		expect(wire.length).toBe(10 + 65_536)
 	})
 
-	it('rejects opcodes outside the four-bit wire field', () => {
-		expect(() => encodeWebSocketFrame(-1, Buffer.alloc(0))).toThrow(RangeError)
-		expect(() => encodeWebSocketFrame(16, Buffer.alloc(0))).toThrow(RangeError)
-		expect(() => encodeWebSocketFrame(1.5, Buffer.alloc(0))).toThrow(RangeError)
+	it('rejects opcodes outside the four-bit wire field with a FRAME WebSocketError', () => {
+		for (const opcode of [-1, 16, 1.5]) {
+			const caught = captureError(() => encodeWebSocketFrame(opcode, Buffer.alloc(0)))
+			expect(isWebSocketError(caught) ? caught.code : 'not-websocket').toBe('FRAME')
+			expect(isWebSocketError(caught) ? caught.context : undefined).toEqual({ opcode })
+		}
 	})
 
 	it('requires an explicit mask to be exactly four bytes and enabled', () => {
-		expect(() =>
+		const short = captureError(() =>
 			encodeWebSocketFrame(WEBSOCKET_OPCODE_TEXT, HELLO, {
 				masked: true,
 				mask: Buffer.alloc(3),
 			}),
-		).toThrow(RangeError)
-		expect(() =>
+		)
+		expect(isWebSocketError(short) ? short.code : 'not-websocket').toBe('FRAME')
+		expect(isWebSocketError(short) ? short.context : undefined).toEqual({ size: 3 })
+
+		const unmasked = captureError(() =>
 			encodeWebSocketFrame(WEBSOCKET_OPCODE_TEXT, HELLO, { mask: Buffer.alloc(4) }),
-		).toThrow(RangeError)
+		)
+		expect(isWebSocketError(unmasked) ? unmasked.code : 'not-websocket').toBe('FRAME')
+		expect(isWebSocketError(unmasked) ? unmasked.context : undefined).toBeUndefined()
 	})
 })
 
@@ -285,38 +292,6 @@ describe('measureWebSocketFrame', () => {
 
 	it('returns undefined when the 64-bit extended length is split mid-header', () => {
 		expect(measureWebSocketFrame(Buffer.from([0x82, 127, 0, 0, 0, 0, 0]))).toBeUndefined()
-	})
-})
-
-describe('isWebSocketFrameCanonical', () => {
-	it('accepts each shortest length form and waits for an incomplete prefix', () => {
-		expect(isWebSocketFrameCanonical(Buffer.from([0x81]))).toBeUndefined()
-		expect(isWebSocketFrameCanonical(Buffer.from([0x81, 125]))).toBe(true)
-		expect(
-			isWebSocketFrameCanonical(encodeWebSocketFrame(WEBSOCKET_OPCODE_BINARY, Buffer.alloc(126))),
-		).toBe(true)
-		expect(
-			isWebSocketFrameCanonical(
-				encodeWebSocketFrame(WEBSOCKET_OPCODE_BINARY, Buffer.alloc(65_536)),
-			),
-		).toBe(true)
-	})
-
-	it('rejects non-minimal extended lengths and a set 64-bit high bit', () => {
-		const nonMinimal16 = Buffer.from([0x81, 126, 0, 125])
-		const nonMinimal64 = Buffer.alloc(10)
-		nonMinimal64.writeUInt8(0x81, 0)
-		nonMinimal64.writeUInt8(127, 1)
-		nonMinimal64.writeUInt32BE(0, 2)
-		nonMinimal64.writeUInt32BE(65_535, 6)
-		const highBit = Buffer.alloc(10)
-		highBit.writeUInt8(0x81, 0)
-		highBit.writeUInt8(127, 1)
-		highBit.writeUInt32BE(0x8000_0000, 2)
-
-		expect(isWebSocketFrameCanonical(nonMinimal16)).toBe(false)
-		expect(isWebSocketFrameCanonical(nonMinimal64)).toBe(false)
-		expect(isWebSocketFrameCanonical(highBit)).toBe(false)
 	})
 })
 
