@@ -89,16 +89,20 @@ describe('NodeWebSocket — handshake', () => {
 
 describe('NodeWebSocket — option validation', () => {
 	it('rejects malformed handshake values before writing to or assuming ownership of the socket', async () => {
-		for (const options of [
-			{ key: 'not-base64' },
-			{ key: CLIENT_KEY, protocol: 'mcp\r\nX-Injected: true' },
-		]) {
+		for (const [options, context] of [
+			[{ key: 'not-base64' }, { key: 'not-base64' }],
+			[
+				{ key: CLIENT_KEY, protocol: 'mcp\r\nX-Injected: true' },
+				{ protocol: 'mcp\r\nX-Injected: true' },
+			],
+		] as const) {
 			const [server, client] = duplexPair()
 			const received: Buffer[] = []
 			client.on('data', (chunk: Buffer) => received.push(chunk))
 
 			const caught = captureError(() => createNodeWebSocket({ socket: server, ...options }))
 			expect(isWebSocketError(caught) ? caught.code : 'not-websocket').toBe('OPTION')
+			expect(isWebSocketError(caught) ? caught.context : undefined).toEqual(context)
 			await flushSocket()
 
 			expect(received).toEqual([])
@@ -317,29 +321,34 @@ describe('NodeWebSocket — close', () => {
 		expect(ws.readyState).toBe(3)
 	})
 
-	it('rejects invalid outbound control payloads without changing the open state', async () => {
-		const [server] = duplexPair()
+	it('rejects invalid outbound control payloads without writing a frame or changing the open state', async () => {
+		const [server, client] = duplexPair()
+		const received: Buffer[] = []
+		client.on('data', (chunk: Buffer) => received.push(chunk))
 		const ws = createNodeWebSocket({ socket: server, key: CLIENT_KEY })
 		await flushSocket()
+		received.length = 0 // drop the handshake bytes; only the refusals are under test
 
 		const oversize = captureError(() => ws.ping('a'.repeat(126)))
-		expect(isWebSocketError(oversize) ? oversize.code : 'not-websocket').toBe('PAYLOAD')
+		expect(isWebSocketError(oversize) ? oversize.code : 'not-websocket').toBe('LIMIT')
 		expect(isWebSocketError(oversize) ? oversize.context : undefined).toEqual({
 			size: 126,
 			limit: WEBSOCKET_CONTROL_MAXLEN,
 		})
 
 		const fractional = captureError(() => ws.close(1000.5))
-		expect(isWebSocketError(fractional) ? fractional.code : 'not-websocket').toBe('CODE')
+		expect(isWebSocketError(fractional) ? fractional.code : 'not-websocket').toBe('CLOSE')
 		expect(isWebSocketError(fractional) ? fractional.context : undefined).toEqual({ code: 1000.5 })
 
 		const longReason = captureError(() => ws.close(WEBSOCKET_CLOSE_NORMAL, 'a'.repeat(124)))
-		expect(isWebSocketError(longReason) ? longReason.code : 'not-websocket').toBe('PAYLOAD')
+		expect(isWebSocketError(longReason) ? longReason.code : 'not-websocket').toBe('LIMIT')
 		expect(isWebSocketError(longReason) ? longReason.context : undefined).toEqual({
 			size: 124,
 			limit: WEBSOCKET_CLOSE_REASON_MAXLEN,
 		})
 
+		await flushSocket()
+		expect(Buffer.concat(received)).toEqual(Buffer.alloc(0))
 		expect(ws.readyState).toBe(1)
 
 		ws.destroy()

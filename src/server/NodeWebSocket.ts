@@ -7,17 +7,9 @@ import type {
 } from './types.js'
 import type { EmitterInterface } from '@orkestrel/emitter'
 import { Emitter } from '@orkestrel/emitter'
-import {
-	computeWebSocketAccept,
-	encodeWebSocketFrame,
-	isCloseCode,
-	isWebSocketKey,
-	isWebSocketProtocol,
-	measureWebSocketFrame,
-	parseUTF8,
-	parseWebSocketFrame,
-} from './helpers.js'
-import { parseWebSocketCanonical } from './parsers.js'
+import { computeWebSocketAccept, encodeWebSocketFrame, measureWebSocketFrame } from './helpers.js'
+import { parseUTF8, parseWebSocketCanonical, parseWebSocketFrame } from './parsers.js'
+import { isCloseCode, isWebSocketKey, isWebSocketProtocol } from './validators.js'
 import { WebSocketError } from './errors.js'
 import {
 	WEBSOCKET_CLOSE_INVALID,
@@ -190,11 +182,10 @@ export class NodeWebSocket implements NodeWebSocketInterface {
 		if (this.#readyState !== WEBSOCKET_READY_OPEN) return
 		const size = data === undefined ? 0 : Buffer.byteLength(data, 'utf-8')
 		if (size > WEBSOCKET_CONTROL_MAXLEN) {
-			throw new WebSocketError(
-				'PAYLOAD',
-				`ping payload exceeds ${WEBSOCKET_CONTROL_MAXLEN} bytes`,
-				{ size, limit: WEBSOCKET_CONTROL_MAXLEN },
-			)
+			throw new WebSocketError('LIMIT', `ping payload exceeds ${WEBSOCKET_CONTROL_MAXLEN} bytes`, {
+				size,
+				limit: WEBSOCKET_CONTROL_MAXLEN,
+			})
 		}
 		this.#write(
 			WEBSOCKET_OPCODE_PING,
@@ -210,12 +201,12 @@ export class NodeWebSocket implements NodeWebSocketInterface {
 			return
 		}
 		if (code !== undefined && !isCloseCode(code)) {
-			throw new WebSocketError('CODE', 'invalid close code', { code })
+			throw new WebSocketError('CLOSE', 'invalid close code', { code })
 		}
 		const size = reason === undefined ? 0 : Buffer.byteLength(reason, 'utf-8')
 		if (size > WEBSOCKET_CLOSE_REASON_MAXLEN) {
 			throw new WebSocketError(
-				'PAYLOAD',
+				'LIMIT',
 				`close reason exceeds ${WEBSOCKET_CLOSE_REASON_MAXLEN} bytes`,
 				{ size, limit: WEBSOCKET_CLOSE_REASON_MAXLEN },
 			)

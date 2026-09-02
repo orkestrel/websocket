@@ -6,7 +6,7 @@ import type { WebSocketErrorCode } from './types.js'
 // value the RFC 6455 wire protocol cannot carry — a malformed option, an over-cap
 // control payload, an unsendable close code, an unrepresentable frame header — and
 // each throws before it writes a byte: an OPTION before the wrapper assumes ownership
-// of the socket, a PAYLOAD and a CODE without writing a frame or moving `readyState`,
+// of the socket, a LIMIT and a CLOSE without writing a frame or moving `readyState`,
 // and a FRAME out of the pure encoder, which touches no socket. A PEER's protocol
 // violation is not an error: it closes the connection with the matching
 // `WEBSOCKET_CLOSE_*` status code instead (AGENTS §12).
@@ -17,8 +17,8 @@ import type { WebSocketErrorCode } from './types.js'
  * @remarks
  * Carries a {@link WebSocketErrorCode} and an optional `context` record holding the
  * refused value under a key naming it: an `'OPTION'` carries the offending option
- * (`payload`, `timeout`, `key`, or `protocol`), a `'PAYLOAD'` carries `size` and the
- * `limit` it exceeded, a `'CODE'` carries the refused close `code`, and a `'FRAME'`
+ * (`payload`, `timeout`, `key`, or `protocol`), a `'LIMIT'` carries `size` and the
+ * `limit` it exceeded, a `'CLOSE'` carries the refused close `code`, and a `'FRAME'`
  * carries `opcode` or the mask's `size`. Narrow a caught value with
  * {@link isWebSocketError}.
  *
@@ -69,7 +69,7 @@ export class WebSocketError extends Error {
  * try {
  * 	ws.close(1000.5)
  * } catch (error) {
- * 	if (isWebSocketError(error) && error.code === 'CODE') ws.close()
+ * 	if (isWebSocketError(error) && error.code === 'CLOSE') ws.close()
  * }
  * ```
  */

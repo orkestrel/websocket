@@ -74,14 +74,14 @@ export interface WebSocketEncodeOptions {
  * @remarks
  * `OPTION` — a {@link NodeWebSocketOptions} member was refused at construction
  * (`payload`, `timeout`, `key`, `protocol`, or a `protocol` given without a server
- * `key`). `PAYLOAD` — an outbound control-frame payload exceeded its RFC 6455 §5.5 cap
+ * `key`). `LIMIT` — an outbound control-frame payload exceeded its RFC 6455 §5.5 cap
  * (`ping` data past `WEBSOCKET_CONTROL_MAXLEN`, a `close` reason past
- * `WEBSOCKET_CLOSE_REASON_MAXLEN`). `CODE` — a close status code `isCloseCode` refuses
+ * `WEBSOCKET_CLOSE_REASON_MAXLEN`). `CLOSE` — a close status code `isCloseCode` refuses
  * was passed to `close`. `FRAME` — an `encodeWebSocketFrame` frame-header argument was
  * refused (an opcode outside the four-bit wire field, a mask that is not 4 bytes, or a
  * mask supplied without `masked: true`).
  */
-export type WebSocketErrorCode = 'OPTION' | 'PAYLOAD' | 'CODE' | 'FRAME'
+export type WebSocketErrorCode = 'OPTION' | 'LIMIT' | 'CLOSE' | 'FRAME'
 
 // === Events
 
@@ -159,9 +159,9 @@ export interface NodeWebSocketOptions {
  * reason); `destroy` tears the socket down immediately. `readyState` tracks the
  * lifecycle. It owns a typed `emitter` (AGENTS §13) and never throws on a faulty
  * listener — the emitter routes it to its `error` handler (the `error` option).
- * `ping` throws a `PAYLOAD`-coded `WebSocketError` when its UTF-8 payload exceeds
- * `WEBSOCKET_CONTROL_MAXLEN`; `close` throws a `CODE`-coded one for a status code
- * `isCloseCode` refuses and a `PAYLOAD`-coded one for a reason past
+ * `ping` throws a `LIMIT`-coded `WebSocketError` when its UTF-8 payload exceeds
+ * `WEBSOCKET_CONTROL_MAXLEN`; `close` throws a `CLOSE`-coded one for a status code
+ * `isCloseCode` refuses and a `LIMIT`-coded one for a reason past
  * `WEBSOCKET_CLOSE_REASON_MAXLEN`, in each case without changing `readyState`.
  */
 export interface NodeWebSocketInterface {
