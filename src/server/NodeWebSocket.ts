@@ -35,7 +35,7 @@ import {
 } from './constants.js'
 
 /**
- * A server-native WebSocket over a raw upgraded `node:stream` Duplex — the lean
+ * Represents a server-native WebSocket over a raw upgraded `node:stream` Duplex — the lean
  * wrapper around the RFC 6455 wire protocol.
  *
  * @remarks

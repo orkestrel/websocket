@@ -12,7 +12,7 @@ import { WebSocketError } from './errors.js'
 // `isCloseCode`) in `validators.ts` — this file keeps only what is neither.
 //
 /**
- * Compute the `Sec-WebSocket-Accept` response value for an RFC 6455 upgrade.
+ * Computes the `Sec-WebSocket-Accept` response value for an RFC 6455 upgrade.
  *
  * @remarks
  * The base64-encoded SHA-1 of the client's `Sec-WebSocket-Key` concatenated with the
@@ -29,7 +29,7 @@ export function computeWebSocketAccept(key: string): string {
 }
 
 /**
- * Read the declared payload length off the front of a buffer, without buffering or
+ * Reads the declared payload length off the front of a buffer, without buffering or
  * reading the payload itself.
  *
  * @remarks

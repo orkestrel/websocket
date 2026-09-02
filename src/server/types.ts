@@ -18,7 +18,7 @@ import type { EmitterErrorHandler, EmitterHooks, EmitterInterface } from '@orkes
 // === Ready state
 
 /**
- * A WebSocket ready state — the four browser-compatible lifecycle values.
+ * Represents a WebSocket ready state — the four browser-compatible lifecycle values.
  *
  * @remarks
  * `0` connecting, `1` open, `2` closing, `3` closed — the same numbering the DOM
@@ -30,7 +30,7 @@ export type WebSocketReadyState = 0 | 1 | 2 | 3
 // === Frame
 
 /**
- * A parsed RFC 6455 frame — the structured result of decoding one frame off the wire.
+ * Represents a parsed RFC 6455 frame — the structured result of decoding one frame off the wire.
  *
  * @remarks
  * `fin` is the final-fragment bit (false for a continued fragment); `opcode`
@@ -53,7 +53,7 @@ export interface WebSocketFrame {
 }
 
 /**
- * Options for {@link encodeWebSocketFrame} — how a frame is masked on the wire.
+ * Represents the options for {@link encodeWebSocketFrame} — how a frame is masked on the wire.
  *
  * @remarks
  * `masked` toggles the mask bit (server→client frames are NOT masked, the default;
@@ -69,7 +69,7 @@ export interface WebSocketEncodeOptions {
 // === Errors
 
 /**
- * The subject an {@link import('./errors.js').WebSocketError} names as refused.
+ * Represents the subject an {@link import('./errors.js').WebSocketError} names as refused.
  *
  * @remarks
  * `OPTION` — a {@link NodeWebSocketOptions} member was refused at construction
@@ -86,7 +86,7 @@ export type WebSocketErrorCode = 'OPTION' | 'LIMIT' | 'CLOSE' | 'FRAME'
 // === Events
 
 /**
- * The event map of a {@link NodeWebSocketInterface} (AGENTS §13).
+ * Represents the event map of a {@link NodeWebSocketInterface} (AGENTS §13).
  *
  * @remarks
  * `open` — the handshake completed and the socket is ready. `message` — a text frame
@@ -110,7 +110,7 @@ export type NodeWebSocketEventMap = {
 // === Options
 
 /**
- * Options for `createNodeWebSocket`.
+ * Represents the options for `createNodeWebSocket`.
  *
  * @remarks
  * `socket` is the upgraded `node:stream` Duplex (the raw TCP stream after the HTTP
@@ -137,7 +137,7 @@ export interface NodeWebSocketOptions {
 	readonly head?: Buffer
 	readonly protocol?: string
 	readonly on?: EmitterHooks<NodeWebSocketEventMap>
-	/** The emitter's listener-error handler (AGENTS §13) — a listener throw routes here, not to a domain event. */
+	/** Holds the emitter's listener-error handler (AGENTS §13) — a listener throw routes here, not to a domain event. */
 	readonly error?: EmitterErrorHandler
 	readonly payload?: number
 	readonly timeout?: number
@@ -147,7 +147,7 @@ export interface NodeWebSocketOptions {
 // === Wrapper
 
 /**
- * A server-native WebSocket over a raw upgraded socket — the behavioral contract.
+ * Represents a server-native WebSocket over a raw upgraded socket — the behavioral contract.
  *
  * @remarks
  * Created by `createNodeWebSocket`. In server mode it writes the RFC 6455 handshake

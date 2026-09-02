@@ -6,7 +6,7 @@ import type { WebSocketFrame } from './types.js'
 // bytes that may not be there yet, where a guard is total.
 
 /**
- * Decode a single RFC 6455 frame from the front of a buffer.
+ * Decodes a single RFC 6455 frame from the front of a buffer.
  *
  * @remarks
  * Reads the FIN bit and opcode (byte 0), the mask bit and 7-bit payload length (byte
@@ -109,7 +109,7 @@ export function parseWebSocketCanonical(buffer: Buffer): boolean | undefined {
 }
 
 /**
- * Decode a byte sequence as strict UTF-8, or signal it is malformed.
+ * Decodes a byte sequence as strict UTF-8, or signals it is malformed.
  *
  * @remarks
  * Wraps `TextDecoder('utf-8', { fatal: true })` in a try/catch so a malformed sequence

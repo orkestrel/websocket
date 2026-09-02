@@ -12,7 +12,7 @@ import type { WebSocketErrorCode } from './types.js'
 // `WEBSOCKET_CLOSE_*` status code instead (AGENTS §12).
 
 /**
- * An error thrown by the WebSocket wrapper for a refused caller-supplied value.
+ * Represents an error thrown by the WebSocket wrapper for a refused caller-supplied value.
  *
  * @remarks
  * Carries a {@link WebSocketErrorCode} and an optional `context` record holding the
@@ -57,10 +57,10 @@ export class WebSocketError extends Error {
 }
 
 /**
- * Whether a value is a {@link WebSocketError}.
+ * Checks whether a value is a {@link WebSocketError}.
  *
  * @param value - The value to test (typically a `catch` binding)
- * @returns `true` when `value` is a `WebSocketError`
+ * @returns True if `value` is a `WebSocketError`; false otherwise
  *
  * @example
  * ```ts

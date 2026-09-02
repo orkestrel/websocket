@@ -3,7 +3,7 @@
 // never `undefined`, is a guard and belongs here, never in `parsers.ts`.
 
 /**
- * Whether a value is a canonical RFC 6455 `Sec-WebSocket-Key`.
+ * Checks whether a value is a canonical RFC 6455 `Sec-WebSocket-Key`.
  *
  * @remarks
  * A valid key is exactly 16 random bytes encoded as 24 characters of base64, ending
@@ -11,7 +11,7 @@
  * malformed or non-canonical encodings return `false`; nothing is thrown.
  *
  * @param key - The proposed `Sec-WebSocket-Key` header value
- * @returns `true` when `key` is the canonical base64 encoding of 16 bytes
+ * @returns True if `key` is the canonical base64 encoding of 16 bytes; false otherwise
  *
  * @example
  * ```ts
@@ -25,7 +25,7 @@ export function isWebSocketKey(key: string): boolean {
 }
 
 /**
- * Whether a value is one valid WebSocket subprotocol token.
+ * Checks whether a value is one valid WebSocket subprotocol token.
  *
  * @remarks
  * Subprotocols use the HTTP `token` grammar. Whitespace, separators, commas, and
@@ -33,7 +33,7 @@ export function isWebSocketKey(key: string): boolean {
  * second handshake header.
  *
  * @param protocol - The negotiated subprotocol to validate
- * @returns `true` when `protocol` is one non-empty HTTP token
+ * @returns True if `protocol` is one non-empty HTTP token; false otherwise
  *
  * @example
  * ```ts
@@ -45,7 +45,7 @@ export function isWebSocketProtocol(protocol: string): boolean {
 }
 
 /**
- * Whether a numeric value is a valid RFC 6455 close status code to RECEIVE (§7.4.1).
+ * Checks whether a numeric value is a valid RFC 6455 close status code to RECEIVE (§7.4.1).
  *
  * @remarks
  * True for `1000`–`1003`, `1007`–`1014`, and the application range `3000`–`4999`; false
@@ -58,7 +58,7 @@ export function isWebSocketProtocol(protocol: string): boolean {
  * never throws.
  *
  * @param code - The close status code to validate
- * @returns `true` when `code` is a valid RFC 6455 close code
+ * @returns True if `code` is a valid RFC 6455 close code; false otherwise
  *
  * @example
  * ```ts
