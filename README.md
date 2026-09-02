@@ -42,7 +42,7 @@ createServer().on('upgrade', (request, socket, head) => {
 
 The full API — factories, the `NodeWebSocket` class, the pure codec helpers,
 constants, and types — is documented in
-[`guides/src/websocket.md`](https://github.com/orkestrel/websocket/blob/main/guides/src/websocket.md).
+[`guides/websocket.md`](https://github.com/orkestrel/websocket/blob/main/guides/websocket.md).
 
 ## Package
 
