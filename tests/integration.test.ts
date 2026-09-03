@@ -1,11 +1,14 @@
-// Live-client WebSocket integration battery — driven by the platform WebSocket client
-// (AGENTS §16.2): no `@src/*` or `node:*` import here, only the browser-native `WebSocket`,
-// the shared browser helpers from `tests/setup.ts` (env-agnostic, framework-free), and the
-// injected `wsUrl` the Node-side `setupGlobal.ts` provides (booting the package's own
-// `createNodeWebSocket` server). These prove the wire protocol actually round-trips against a
-// real client, not just the in-memory Duplex pair the src:server suite drives. They are slow
-// and environment-dependent, so they are kept OUT of the default `test` run and live in this
-// dedicated, opt-in `integration` project instead (run via `npm run test:integration`).
+// Live-client WebSocket integration battery — driven by the platform WebSocket client:
+// no `@src/*` or `node:*` import here, only the browser-native `WebSocket`, the shared
+// browser helpers from `tests/setup.ts` (the platform `WebSocket` plus `@orkestrel/test`'s
+// `waitForEvent` — no `node:*` API), and the injected
+// `wsUrl` the Node-side `setupGlobal.ts` provides (starting the package's own
+// `createNodeWebSocket` echo server). These prove the wire protocol actually round-trips
+// against a real client, not only the in-memory Duplex pair the src:server suite drives.
+// They compose this workspace's public surfaces without packing, installing, or driving an
+// external service, so the `integration` project runs from `test` like every other
+// cross-cutting proof; `npm run test:integration` is the scoped script for running it
+// alone.
 
 import { describe, expect, inject, it } from 'vitest'
 import { seededRandom } from '@orkestrel/contract'
@@ -102,7 +105,7 @@ describe('WebSocket integration — limit & stress battery', () => {
 		const rng = seededRandom(11)
 		const sampled = buildText(rng, 200)
 		const payload = `${sampled}🔥🧵👩‍👩‍👧‍👦éCJK漢字中文한글`
-		// The payload guards itself. The echo assertion below compares the reply to this
+		// The payload guards itself. The following echo assertion compares the reply to this
 		// same string, so it proves the transport round-tripped whatever it was given and
 		// says nothing about whether the string still carries the case this test exists
 		// for. A decomposed combining mark is that case — it is what a normalizing encoder

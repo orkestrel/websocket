@@ -13,7 +13,7 @@ npm install @orkestrel/websocket
 
 ## Requirements
 
-- Node.js >= 24
+- Node.js >= 22.12.0
 - Ships dual ESM + CommonJS builds (see `exports` in `package.json`)
 - Server-only — a single Node-native surface
 
@@ -27,9 +27,14 @@ import { createNodeWebSocket } from '@orkestrel/websocket'
 // from there. Passing the client's `sec-websocket-key` selects SERVER mode — the
 // wrapper writes the 101 handshake, marks the connection open, and decodes frames.
 createServer().on('upgrade', (request, socket, head) => {
+	const key = request.headers['sec-websocket-key']
+	if (typeof key !== 'string') {
+		socket.destroy()
+		return
+	}
 	const ws = createNodeWebSocket({
 		socket,
-		key: request.headers['sec-websocket-key'], // present => server mode + 101 handshake
+		key, // present => server mode + 101 handshake
 		head, // any bytes that arrived bundled with the upgrade request
 		on: { message: (text) => ws.send(`echo: ${text}`) }, // wire listeners at construction
 	})

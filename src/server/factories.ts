@@ -5,7 +5,7 @@ import { NodeWebSocket } from './NodeWebSocket.js'
  * Creates a server-native WebSocket over a raw upgraded `node:stream` Duplex socket.
  *
  * @remarks
- * The construction entry point for the {@link NodeWebSocketInterface} (AGENTS §8). Pass
+ * The construction entry point for the {@link NodeWebSocketInterface}. Pass
  * the upgraded `socket` plus the client's `Sec-WebSocket-Key` as `key` to run in SERVER
  * mode — the wrapper writes the `101 Switching Protocols` handshake and sends unmasked
  * frames; omit `key` for CLIENT mode (no handshake, masked frames). This is the
@@ -24,9 +24,14 @@ import { NodeWebSocket } from './NodeWebSocket.js'
  *
  * // In a node:http 'upgrade' handler — server mode, identified by the client key:
  * server.on('upgrade', (request, socket, head) => {
+ * 	const key = request.headers['sec-websocket-key']
+ * 	if (typeof key !== 'string') {
+ * 		socket.destroy()
+ * 		return
+ * 	}
  * 	const ws = createNodeWebSocket({
  * 		socket,
- * 		key: request.headers['sec-websocket-key'],
+ * 		key, // present => server mode + 101 handshake
  * 		head,
  * 		on: { message: (text) => ws.send(`echo: ${text}`) },
  * 	})

@@ -1,7 +1,7 @@
 # Guides
 
 A dual-axis index into this repository's guides — by concept, and by
-directory (AGENTS §22).
+directory.
 
 ## By concept
 
@@ -33,4 +33,4 @@ the primitives it is built from without leaving this guide set.
 
 ## See also
 
-- [`AGENTS.md`](../AGENTS.md) — the rules; §22 documentation-as-contracts.
+- [`AGENTS.md`](../AGENTS.md) — the rules, including the documentation parity contract.

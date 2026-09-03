@@ -8,12 +8,12 @@ import type { EmitterErrorHandler, EmitterHooks, EmitterInterface } from '@orkes
 // wrapper has NO knowledge of MCP, JSON-RPC, or any message schema (that is the
 // transport one layer up). It is the lean-native-wrapper sibling of the SQLite and
 // IndexedDB wrappers: a minimal interface over native power, errors surfaced through
-// the emitter, the codec a set of pure, exported, unit-tested helpers. Types are the
-// source of truth (AGENTS §2).
+// the emitter, the codec a set of pure, exported, unit-tested helpers. This file is the
+// source of truth for the public contracts.
 //
 // Frame payloads are raw `Buffer`s off the wire; text frames decode to a `string` at
 // the boundary, and the untyped socket `data` is narrowed with a guard, never an
-// assertion (AGENTS §14).
+// assertion.
 
 // === Ready state
 
@@ -75,8 +75,8 @@ export interface WebSocketEncodeOptions {
  * `OPTION` — a {@link NodeWebSocketOptions} member was refused at construction
  * (`payload`, `timeout`, `key`, `protocol`, or a `protocol` given without a server
  * `key`). `LIMIT` — an outbound control-frame payload exceeded its RFC 6455 §5.5 cap
- * (`ping` data past `WEBSOCKET_CONTROL_MAXLEN`, a `close` reason past
- * `WEBSOCKET_CLOSE_REASON_MAXLEN`). `CLOSE` — a close status code `isCloseCode` refuses
+ * (a `ping` payload past `WEBSOCKET_CONTROL_MAX_LENGTH`, a `close` reason past
+ * `WEBSOCKET_CLOSE_REASON_MAX_LENGTH`). `CLOSE` — a close status code `isCloseCode` refuses
  * was passed to `close`. `FRAME` — an `encodeWebSocketFrame` frame-header argument was
  * refused (an opcode outside the four-bit wire field, a mask that is not 4 bytes, or a
  * mask supplied without `masked: true`).
@@ -86,7 +86,7 @@ export type WebSocketErrorCode = 'OPTION' | 'LIMIT' | 'CLOSE' | 'FRAME'
 // === Events
 
 /**
- * Represents the event map of a {@link NodeWebSocketInterface} (AGENTS §13).
+ * Represents the event map of a {@link NodeWebSocketInterface}.
  *
  * @remarks
  * `open` — the handshake completed and the socket is ready. `message` — a text frame
@@ -94,8 +94,8 @@ export type WebSocketErrorCode = 'OPTION' | 'LIMIT' | 'CLOSE' | 'FRAME'
  * labeled `[code, reason]` tuple (each `undefined` when the peer sent none). `error` —
  * the underlying socket faulted (a DOMAIN event and then terminates the wrapper).
  * `ping` / `pong` — a control frame arrived (a ping is auto-answered with a pong).
- * Listener isolation is the emitter's (AGENTS §13): a listener throw is routed to the
- * emitter's `error` handler (the `error` option), never onto this map, so a buggy observer
+ * Listener isolation is the emitter's: a listener throw is routed to the emitter's
+ * `error` handler (the `error` option), never onto this map, so a buggy observer
  * never breaks the socket.
  */
 export type NodeWebSocketEventMap = {
@@ -119,8 +119,8 @@ export type NodeWebSocketEventMap = {
  * frames; omit it for CLIENT mode — no handshake is written and frames are MASKED (RFC
  * 6455 §5.3). `head` is any bytes buffered after the upgrade headers (replayed through
  * the parser). `protocol` is a negotiated subprotocol to echo in the handshake. `on`
- * wires initial listeners at construction (AGENTS §8 reserved option); `error` is the
- * emitter's listener-error handler (§13 — a listener throw routes here). `payload` caps
+ * wires initial listeners at construction — the reserved `on` option; `error` is the
+ * emitter's listener-error handler, where a listener throw routes. `payload` caps
  * both a single inbound frame's declared length AND the total bytes of a reassembled
  * fragmented message (default `WEBSOCKET_MAX_PAYLOAD`) — a breach closes 1009. `timeout`
  * is how long the wrapper waits, after sending a close frame, for the peer's echo before
@@ -137,7 +137,7 @@ export interface NodeWebSocketOptions {
 	readonly head?: Buffer
 	readonly protocol?: string
 	readonly on?: EmitterHooks<NodeWebSocketEventMap>
-	/** Holds the emitter's listener-error handler (AGENTS §13) — a listener throw routes here, not to a domain event. */
+	/** Holds the emitter's listener-error handler — a listener throw routes here, not to a domain event. */
 	readonly error?: EmitterErrorHandler
 	readonly payload?: number
 	readonly timeout?: number
@@ -157,18 +157,18 @@ export interface NodeWebSocketOptions {
  * frame is echoed and ends the socket, emitting `close`. `send` writes a text frame;
  * `ping` writes a ping; `close` writes a close frame (the 2-byte code + optional
  * reason); `destroy` tears the socket down immediately. `readyState` tracks the
- * lifecycle. It owns a typed `emitter` (AGENTS §13) and never throws on a faulty
+ * lifecycle. It owns a typed `emitter` by composition and never throws on a faulty
  * listener — the emitter routes it to its `error` handler (the `error` option).
  * `ping` throws a `LIMIT`-coded `WebSocketError` when its UTF-8 payload exceeds
- * `WEBSOCKET_CONTROL_MAXLEN`; `close` throws a `CLOSE`-coded one for a status code
+ * `WEBSOCKET_CONTROL_MAX_LENGTH`; `close` throws a `CLOSE`-coded one for a status code
  * `isCloseCode` refuses and a `LIMIT`-coded one for a reason past
- * `WEBSOCKET_CLOSE_REASON_MAXLEN`, in each case without changing `readyState`.
+ * `WEBSOCKET_CLOSE_REASON_MAX_LENGTH`, in each case without changing `readyState`.
  */
 export interface NodeWebSocketInterface {
 	readonly emitter: EmitterInterface<NodeWebSocketEventMap>
 	readonly readyState: WebSocketReadyState
-	send(data: string): void
-	ping(data?: string): void
+	send(message: string): void
+	ping(payload?: string): void
 	close(code?: number, reason?: string): void
 	destroy(): void
 }

@@ -6,7 +6,7 @@ import { duplexPair, flushSocket } from '../../setupServer.js'
 // `NodeWebSocketInterface` over a real upgraded socket. The full handshake / frame
 // dispatch / ping / close behavior lives in NodeWebSocket.test.ts; here we only assert
 // the factory wires up a usable handle in each mode (server writes the 101, client does
-// not) over a genuine `node:stream` Duplex — no mock (AGENTS §16).
+// not) over a genuine `node:stream` Duplex — a real implementation, no mock.
 
 describe('createNodeWebSocket', () => {
 	it('returns an open NodeWebSocketInterface that wrote the 101 handshake in server mode', async () => {

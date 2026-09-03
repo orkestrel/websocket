@@ -1,6 +1,6 @@
 import type { WebSocketReadyState } from './types.js'
 
-// The WebSocket wrapper's wire constants (AGENTS §5 constants file) — the RFC 6455
+// The WebSocket wrapper's wire constants — the RFC 6455
 // magic values the codec and the handshake are built on: the accept GUID, the
 // supported protocol version, the frame opcodes, the four ready states, and the
 // normal-closure status code. Every member is exported; the codec helpers and the
@@ -55,14 +55,14 @@ export const WEBSOCKET_CLOSE_NORMAL = 1000
 /** Names the protocol-error status code (RFC 6455 §7.4.1) — a framing/state rule was violated. */
 export const WEBSOCKET_CLOSE_PROTOCOL = 1002
 
-/** Names the unsupported-data status code (RFC 6455 §7.4.1) — the endpoint received a data type it cannot accept (e.g. binary on a text-only endpoint). */
+/** Names the unsupported-data status code (RFC 6455 §7.4.1) — the endpoint received a data type it cannot accept, for example binary on a text-only endpoint. */
 export const WEBSOCKET_CLOSE_UNSUPPORTED = 1003
 
-/** Names the invalid-frame-payload-data status code (RFC 6455 §7.4.1) — e.g. non-UTF-8 text or an unparseable close reason. */
+/** Names the invalid-frame-payload-data status code (RFC 6455 §7.4.1) — for example non-UTF-8 text or an unparseable close reason. */
 export const WEBSOCKET_CLOSE_INVALID = 1007
 
 /** Names the message-too-big status code (RFC 6455 §7.4.1) — a reassembled message exceeded the payload cap. */
-export const WEBSOCKET_CLOSE_TOOBIG = 1009
+export const WEBSOCKET_CLOSE_TOO_BIG = 1009
 
 /** Names the default maximum inbound single-frame length AND reassembled-message total byte count (100 MiB — the `ws` package default). */
 export const WEBSOCKET_MAX_PAYLOAD = 104_857_600
@@ -74,7 +74,7 @@ export const WEBSOCKET_CLOSE_TIMEOUT_MS = 30_000
 export const WEBSOCKET_FAIL_TIMEOUT_MS = 1_000
 
 /** Names the maximum control-frame payload length in bytes (RFC 6455 §5.5). */
-export const WEBSOCKET_CONTROL_MAXLEN = 125
+export const WEBSOCKET_CONTROL_MAX_LENGTH = 125
 
 /** Names the maximum UTF-8 close-reason length after the two-byte status code. */
-export const WEBSOCKET_CLOSE_REASON_MAXLEN = WEBSOCKET_CONTROL_MAXLEN - 2
+export const WEBSOCKET_CLOSE_REASON_MAX_LENGTH = WEBSOCKET_CONTROL_MAX_LENGTH - 2

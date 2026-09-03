@@ -3,14 +3,16 @@ import { createHash, randomBytes } from 'node:crypto'
 import { WEBSOCKET_GUID } from './constants.js'
 import { WebSocketError } from './errors.js'
 
-// The remaining RFC 6455 codec helpers — pure, exported, and exhaustively tested.
-// `computeWebSocketAccept` derives the handshake token; `measureWebSocketFrame` reads
-// a frame's declared length off the header alone; `encodeWebSocketFrame` builds the
-// wire representation and refuses an unrepresentable frame header with a `FRAME`-coded
-// `WebSocketError`. The coercers (`parseWebSocketFrame`, `parseUTF8`) live in
-// `parsers.ts` and the boundary guards (`isWebSocketKey`, `isWebSocketProtocol`,
-// `isCloseCode`) in `validators.ts` — this file keeps only what is neither.
-//
+// The RFC 6455 codec helpers and boundary predicates — pure, exported, and exhaustively
+// tested. `computeWebSocketAccept` derives the handshake token; `measureWebSocketFrame`
+// reads a frame's declared payload length off the header alone and
+// `matchesWebSocketCanonical` reads whether that length uses the shortest valid encoding;
+// `encodeWebSocketFrame` builds the wire representation and refuses an unrepresentable
+// frame header with a `FRAME`-coded `WebSocketError`; `isWebSocketKey`,
+// `isWebSocketProtocol`, and `isCloseCode` are total predicates over caller-supplied
+// handshake and wire values. The coercers (`parseWebSocketFrame`, `parseUTF8`) live in
+// `parsers.ts` — this file keeps every pure read and predicate that coerces nothing.
+
 /**
  * Computes the `Sec-WebSocket-Accept` response value for an RFC 6455 upgrade.
  *
@@ -45,7 +47,7 @@ export function computeWebSocketAccept(key: string): string {
  * @example
  * ```ts
  * const declared = measureWebSocketFrame(buffer)
- * if (declared !== undefined && declared > limit) fail(WEBSOCKET_CLOSE_TOOBIG)
+ * if (declared !== undefined && declared > limit) fail(WEBSOCKET_CLOSE_TOO_BIG)
  * ```
  */
 export function measureWebSocketFrame(buffer: Buffer): number | undefined {
@@ -69,6 +71,40 @@ export function measureWebSocketFrame(buffer: Buffer): number | undefined {
 }
 
 /**
+ * Checks whether the next frame uses the shortest valid RFC 6455 payload-length encoding.
+ *
+ * @remarks
+ * Returns `undefined` until the complete length prefix is buffered. The 16-bit form
+ * is canonical only for lengths at least 126; the 64-bit form only for lengths at
+ * least 65,536 and with its most-significant bit clear (RFC 6455 §5.2). Reads the same
+ * length prefix as {@link measureWebSocketFrame}, under the same incomplete-buffer
+ * contract. Pure; never throws.
+ *
+ * @param buffer - The accumulation buffer containing the next frame header
+ * @returns Its canonicality, or `undefined` while the length prefix is incomplete
+ *
+ * @example
+ * ```ts
+ * if (matchesWebSocketCanonical(buffer) === false) fail(WEBSOCKET_CLOSE_PROTOCOL)
+ * ```
+ */
+export function matchesWebSocketCanonical(buffer: Buffer): boolean | undefined {
+	if (buffer.length < 2) return undefined
+
+	const lengthCode = buffer.readUInt8(1) & 0x7f
+	if (lengthCode < 126) return true
+	if (lengthCode === 126) {
+		if (buffer.length < 4) return undefined
+		return buffer.readUInt16BE(2) >= 126
+	}
+	if (buffer.length < 10) return undefined
+	const high = buffer.readUInt32BE(2)
+	const low = buffer.readUInt32BE(6)
+	if ((high & 0x8000_0000) !== 0) return false
+	return high > 0 || low >= 65_536
+}
+
+/**
  * Encodes a single RFC 6455 frame to its wire bytes — the inverse of
  * `parseWebSocketFrame`.
  *
@@ -76,11 +112,11 @@ export function measureWebSocketFrame(buffer: Buffer): number | undefined {
  * Builds a final (FIN-set) frame: byte 0 is `0x80 | opcode`; the payload length uses
  * the 7-bit form below 126, the `126` + 16-bit form below 65 536, or the `127` +
  * 64-bit form beyond; when `masked` is set the mask bit is set, a 4-byte key (supplied
- * via `options.mask`, else random) is written, and the payload is XOR-masked. Server→
+ * through `options.mask`, else random) is written, and the payload is XOR-masked. Server→
  * client frames are unmasked (the default); pass `masked: true` to encode a CLIENT
- * frame (e.g. to feed the parser in a test). A `string` payload is encoded as UTF-8.
- * Returns one contiguous `Buffer` (header + payload), so the wrapper writes it with a
- * single `socket.write`. Pure.
+ * frame (for example to feed the parser in a test). A `string` payload is encoded as
+ * UTF-8. Returns one contiguous `Buffer` (header + payload), so the wrapper writes it
+ * with a single `socket.write`. Pure.
  *
  * @param opcode - The frame opcode (a `WEBSOCKET_OPCODE_*` value)
  * @param payload - The payload, a `Buffer` or a UTF-8 `string`
@@ -135,4 +171,75 @@ export function encodeWebSocketFrame(
 		maskedBody[index] = body.readUInt8(index) ^ mask.readUInt8(index % 4)
 	}
 	return Buffer.concat([header, maskedBody])
+}
+
+/**
+ * Checks whether a value is a canonical RFC 6455 `Sec-WebSocket-Key`.
+ *
+ * @remarks
+ * A valid key is exactly 16 random bytes encoded as 24 characters of base64, ending
+ * in `==` (RFC 6455 §4.1). This predicate is suitable at an HTTP upgrade boundary:
+ * malformed or non-canonical encodings return `false`; nothing is thrown.
+ *
+ * @param key - The proposed `Sec-WebSocket-Key` header value
+ * @returns True if `key` is the canonical base64 encoding of 16 bytes; false otherwise
+ *
+ * @example
+ * ```ts
+ * const key = request.headers['sec-websocket-key']
+ * if (typeof key !== 'string' || !isWebSocketKey(key)) socket.destroy()
+ * ```
+ */
+export function isWebSocketKey(key: string): boolean {
+	if (!/^[A-Za-z0-9+/]{22}==$/.test(key)) return false
+	return Buffer.from(key, 'base64').length === 16
+}
+
+/**
+ * Checks whether a value is one valid WebSocket subprotocol token.
+ *
+ * @remarks
+ * Subprotocols use the HTTP `token` grammar. Whitespace, separators, commas, and
+ * control characters are rejected, preventing an untrusted value from injecting a
+ * second handshake header.
+ *
+ * @param protocol - The negotiated subprotocol to validate
+ * @returns True if `protocol` is one non-empty HTTP token; false otherwise
+ *
+ * @example
+ * ```ts
+ * if (!isWebSocketProtocol(protocol)) socket.destroy()
+ * ```
+ */
+export function isWebSocketProtocol(protocol: string): boolean {
+	return /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/.test(protocol)
+}
+
+/**
+ * Checks whether a numeric value is a valid RFC 6455 close status code to RECEIVE (§7.4.1).
+ *
+ * @remarks
+ * True for `1000`–`1003`, `1007`–`1014`, and the application range `3000`–`4999`; false
+ * for anything below `1000`, the reserved-for-local-use-only codes `1004`–`1006` and
+ * `1015`, and the unassigned `1016`–`2999` range. The `1012`–`1014` extension of the
+ * strict RFC 6455 receivable set is a deliberate IANA-interop choice: those three codes
+ * (Service Restart, Try Again Later, Bad Gateway) are IANA-registered in the WebSocket
+ * Close Code Number Registry and accepted by the `ws` ecosystem and modern conformance
+ * suites, so a peer sending one is not treated as a protocol violation. Pure predicate,
+ * never throws.
+ *
+ * @param code - The close status code to validate
+ * @returns True if `code` is a valid RFC 6455 close code; false otherwise
+ *
+ * @example
+ * ```ts
+ * if (!isCloseCode(code)) fail(WEBSOCKET_CLOSE_PROTOCOL)
+ * ```
+ */
+export function isCloseCode(code: number): boolean {
+	if (!Number.isInteger(code)) return false
+	if (code >= 1000 && code <= 1003) return true
+	if (code >= 1007 && code <= 1014) return true
+	if (code >= 3000 && code <= 4999) return true
+	return false
 }

@@ -9,7 +9,7 @@ import type { WebSocketErrorCode } from './types.js'
 // of the socket, a LIMIT and a CLOSE without writing a frame or moving `readyState`,
 // and a FRAME out of the pure encoder, which touches no socket. A PEER's protocol
 // violation is not an error: it closes the connection with the matching
-// `WEBSOCKET_CLOSE_*` status code instead (AGENTS §12).
+// `WEBSOCKET_CLOSE_*` status code instead.
 
 /**
  * Represents an error thrown by the WebSocket wrapper for a refused caller-supplied value.

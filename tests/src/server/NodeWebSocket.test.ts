@@ -7,10 +7,10 @@ import {
 	WEBSOCKET_CLOSE_INVALID,
 	WEBSOCKET_CLOSE_NORMAL,
 	WEBSOCKET_CLOSE_PROTOCOL,
-	WEBSOCKET_CLOSE_REASON_MAXLEN,
-	WEBSOCKET_CLOSE_TOOBIG,
+	WEBSOCKET_CLOSE_REASON_MAX_LENGTH,
+	WEBSOCKET_CLOSE_TOO_BIG,
 	WEBSOCKET_CLOSE_UNSUPPORTED,
-	WEBSOCKET_CONTROL_MAXLEN,
+	WEBSOCKET_CONTROL_MAX_LENGTH,
 	WEBSOCKET_OPCODE_BINARY,
 	WEBSOCKET_OPCODE_CLOSE,
 	WEBSOCKET_OPCODE_CONTINUATION,
@@ -28,17 +28,17 @@ import {
 	readClientFrames,
 } from '../../setupServer.js'
 
-// src/server/websocket/NodeWebSocket.ts — the wrapper driven END TO END over an
-// in-memory `node:stream` Duplex PAIR (two cross-wired PassThroughs, a REAL bidirectional
-// socket, not a mock — AGENTS §16). One end is a server-mode NodeWebSocket; the other is a
-// hand-rolled "client" that writes MASKED frames (encodeWebSocketFrame({ masked: true }))
-// and reads the server's UNMASKED frames through parseWebSocketFrame. The in-memory Duplex
-// pair + flush + client frame reader are the SHARED `duplexPair` / `flushSocket` /
-// `readClientFrames` from setupServer.ts (AGENTS §16.1 — the same harness the MCP WebSocket
-// transport test reuses). Proves: the 101 handshake is written, a client text frame →
-// `message`, `send` → a readable frame on the client, ping → auto-pong, close → `close` + a
-// close handshake, and §13 observer-error isolation (a throwing listener routes to the
-// emitter's `error` handler, never crashes the socket).
+// src/server/NodeWebSocket.ts — the wrapper driven END TO END over an in-memory
+// `node:stream` Duplex PAIR (two cross-wired PassThroughs, a REAL bidirectional socket,
+// not a mock). One end is a server-mode NodeWebSocket; the other is a hand-rolled "client"
+// that writes MASKED frames (encodeWebSocketFrame({ masked: true })) and reads the
+// server's UNMASKED frames through parseWebSocketFrame. The in-memory Duplex pair + flush
+// + client frame reader are the SHARED `duplexPair` / `flushSocket` / `readClientFrames`
+// from setupServer.ts — the same harness the MCP WebSocket transport test reuses. Proves:
+// the 101 handshake is written, a client text frame → `message`, `send` → a readable frame
+// on the client, ping → auto-pong, close → `close` + a close handshake, and observer-error
+// isolation (a throwing listener routes to the emitter's `error` handler, never crashes
+// the socket).
 
 // The client's `Sec-WebSocket-Key` for the handshake assertions.
 const CLIENT_KEY = 'dGhlIHNhbXBsZSBub25jZQ=='
@@ -224,7 +224,7 @@ describe('NodeWebSocket — sending', () => {
 		const { frames } = readClientFrames(client)
 		const ws = createNodeWebSocket({ socket: server, key: CLIENT_KEY })
 		await flushSocket()
-		ws.destroy() // now closed
+		ws.destroy() // closed
 		ws.send('dropped')
 		await flushSocket()
 		expect(frames.some((entry) => entry.opcode === WEBSOCKET_OPCODE_TEXT)).toBe(false)
@@ -333,7 +333,7 @@ describe('NodeWebSocket — close', () => {
 		expect(isWebSocketError(oversize) ? oversize.code : 'not-websocket').toBe('LIMIT')
 		expect(isWebSocketError(oversize) ? oversize.context : undefined).toEqual({
 			size: 126,
-			limit: WEBSOCKET_CONTROL_MAXLEN,
+			limit: WEBSOCKET_CONTROL_MAX_LENGTH,
 		})
 
 		const fractional = captureError(() => ws.close(1000.5))
@@ -344,7 +344,7 @@ describe('NodeWebSocket — close', () => {
 		expect(isWebSocketError(longReason) ? longReason.code : 'not-websocket').toBe('LIMIT')
 		expect(isWebSocketError(longReason) ? longReason.context : undefined).toEqual({
 			size: 124,
-			limit: WEBSOCKET_CLOSE_REASON_MAXLEN,
+			limit: WEBSOCKET_CLOSE_REASON_MAX_LENGTH,
 		})
 
 		await flushSocket()
@@ -355,7 +355,7 @@ describe('NodeWebSocket — close', () => {
 	})
 })
 
-describe('NodeWebSocket — §13 observer-error isolation', () => {
+describe('NodeWebSocket — observer-error isolation', () => {
 	it('isolates a throwing message listener and routes to the error handler', async () => {
 		const [server, client] = duplexPair()
 		const recorder = createRecorder<[error: unknown, event: string]>()
@@ -395,7 +395,7 @@ describe('NodeWebSocket — §13 observer-error isolation', () => {
 
 // The RFC 6455 breach matrix — every distinct validation the hardened `#dispatch` /
 // `#decodeClose` / `#onData` gauntlet enforces, each driven end to end over the same
-// `duplexPair` harness (AGENTS §16.1) and asserted on the emitted `close(code)` (the
+// `duplexPair` harness and asserted on the emitted `close(code)` (the
 // engine's single funnel, `#fail`) followed by teardown (`readyState` → CLOSED). Client
 // frames are encoded `{ masked: true }` per RFC 6455 §5.3 UNLESS the test IS the
 // unmasked-breach case itself.
@@ -527,7 +527,7 @@ describe('NodeWebSocket — breach matrix', () => {
 		expect(ws.readyState).toBe(3)
 	})
 
-	it('a new data frame opened mid-message closes with 1002 (protocol error)', async () => {
+	it('an additional data frame opened mid-message closes with 1002 (protocol error)', async () => {
 		const [server, client] = duplexPair()
 		const closes: Array<number | undefined> = []
 		const ws = createNodeWebSocket({
@@ -662,13 +662,13 @@ describe('NodeWebSocket — breach matrix', () => {
 		)
 		await flushSocket()
 
-		expect(closes).toEqual([WEBSOCKET_CLOSE_TOOBIG])
+		expect(closes).toEqual([WEBSOCKET_CLOSE_TOO_BIG])
 		expect(ws.readyState).toBe(3)
 		// `#fail` flushes the close frame through `socket.end()` before the hard-teardown
 		// fallback destroys — the peer harness must observe the 1009 close frame on the wire.
 		const close = frames.find((entry) => entry.opcode === WEBSOCKET_OPCODE_CLOSE)
 		expect(close).toBeDefined()
-		expect(close?.payload.readUInt16BE(0)).toBe(WEBSOCKET_CLOSE_TOOBIG)
+		expect(close?.payload.readUInt16BE(0)).toBe(WEBSOCKET_CLOSE_TOO_BIG)
 	})
 
 	it('preflights every coalesced frame before buffering its payload', async () => {
@@ -694,7 +694,7 @@ describe('NodeWebSocket — breach matrix', () => {
 		await flushSocket()
 
 		expect(messages).toEqual(['ok'])
-		expect(closes).toEqual([WEBSOCKET_CLOSE_TOOBIG])
+		expect(closes).toEqual([WEBSOCKET_CLOSE_TOO_BIG])
 		expect(ws.readyState).toBe(3)
 	})
 
@@ -725,7 +725,7 @@ describe('NodeWebSocket — breach matrix', () => {
 		)
 		await flushSocket()
 
-		expect(closes).toEqual([WEBSOCKET_CLOSE_TOOBIG])
+		expect(closes).toEqual([WEBSOCKET_CLOSE_TOO_BIG])
 		expect(ws.readyState).toBe(3)
 	})
 
@@ -756,7 +756,7 @@ describe('NodeWebSocket — breach matrix', () => {
 // whether the over-cap bytes arrive as ordinary `data` OR bundled as `options.head` (bytes
 // already read off the socket before the upgrade handler ran).
 describe('NodeWebSocket — head-replay cap parity', () => {
-	it('an over-cap frame delivered entirely via options.head closes 1009 without buffering the payload', async () => {
+	it('an over-cap frame delivered entirely through options.head closes 1009 without buffering the payload', async () => {
 		const [server] = duplexPair()
 		const closes: Array<number | undefined> = []
 		// A small injected payload cap makes the over-cap breach cheap to construct and
@@ -773,7 +773,7 @@ describe('NodeWebSocket — head-replay cap parity', () => {
 		})
 		await flushSocket()
 
-		expect(closes).toEqual([WEBSOCKET_CLOSE_TOOBIG])
+		expect(closes).toEqual([WEBSOCKET_CLOSE_TOO_BIG])
 		expect(ws.readyState).toBe(3)
 	})
 
@@ -1019,8 +1019,8 @@ describe('NodeWebSocket — terminal socket listeners', () => {
 })
 
 // Reassembly, ping/pong interleaving, cap boundaries, close symmetry, and
-// listener-leak hygiene, all driven end to end over the shared `duplexPair` harness
-// (AGENTS §16.1). Each case is a REAL socket exchange — no mock — asserting the
+// listener-leak hygiene, all driven end to end over the shared `duplexPair` harness.
+// Each case is a REAL socket exchange — no mock — asserting the
 // engine's observable contract (message content, wire frames, readyState).
 describe('NodeWebSocket — stream reassembly and lifecycle', () => {
 	it('reassembles a message delivered one byte at a time', async () => {
@@ -1180,7 +1180,7 @@ describe('NodeWebSocket — stream reassembly and lifecycle', () => {
 		client.write(Buffer.concat([first, second]))
 		await flushSocket()
 
-		expect(closes).toEqual([WEBSOCKET_CLOSE_TOOBIG])
+		expect(closes).toEqual([WEBSOCKET_CLOSE_TOO_BIG])
 		expect(ws.readyState).toBe(3) // closed
 	})
 
@@ -1218,11 +1218,11 @@ describe('NodeWebSocket — stream reassembly and lifecycle', () => {
 		client.write(frame(WEBSOCKET_OPCODE_TEXT, Buffer.alloc(51, 0x61), { masked: true }))
 		await flushSocket()
 
-		expect(closes).toEqual([WEBSOCKET_CLOSE_TOOBIG])
+		expect(closes).toEqual([WEBSOCKET_CLOSE_TOO_BIG])
 		expect(ws.readyState).toBe(3) // closed
 		const close = frames.find((f) => f.opcode === WEBSOCKET_OPCODE_CLOSE)
 		expect(close).toBeDefined()
-		expect(close?.payload.readUInt16BE(0)).toBe(WEBSOCKET_CLOSE_TOOBIG)
+		expect(close?.payload.readUInt16BE(0)).toBe(WEBSOCKET_CLOSE_TOO_BIG)
 	})
 
 	it('completes a we-initiate → peer-echoes close with exactly one close event', async () => {
@@ -1386,7 +1386,7 @@ describe('NodeWebSocket — resource limits', () => {
 		client.write(Buffer.concat(frames))
 		await flushSocket()
 
-		expect(closes).toEqual([WEBSOCKET_CLOSE_TOOBIG])
+		expect(closes).toEqual([WEBSOCKET_CLOSE_TOO_BIG])
 		expect(ws.readyState).toBe(3) // closed
 	})
 
@@ -1413,15 +1413,15 @@ describe('NodeWebSocket — resource limits', () => {
 
 		// The cap fires from the declared length alone, before any payload byte arrives:
 		// a 1009 close from a payload-less header proves pre-buffer rejection.
-		expect(closes).toEqual([WEBSOCKET_CLOSE_TOOBIG])
+		expect(closes).toEqual([WEBSOCKET_CLOSE_TOO_BIG])
 		expect(ws.readyState).toBe(3) // closed
 	})
 
 	// Intended behavior, not a missing feature: only the payload cap (on a fully-declared
 	// length) and the close-handshake timeout bound the socket. A frame whose LENGTH PREFIX
 	// itself is still incomplete (fewer than the 2/4/10 header bytes buffered) has no
-	// declared length to measure yet, so it simply sits — a lean wrapper has no idle-byte
-	// timeout, by design (see AGENTS §16 framing notes).
+	// declared length to measure yet, so it sits — a lean wrapper has no idle-byte timeout,
+	// by design.
 	it('leaves a stalled partial frame bounded with no idle timeout (intended, by design)', async () => {
 		const [server, client] = duplexPair()
 		const closes: Array<number | undefined> = []
@@ -1454,7 +1454,7 @@ describe('NodeWebSocket — resource limits', () => {
 
 		// An unmasked frame (a breach on its own) followed by unrelated garbage bytes, all
 		// delivered in a single chunk — the FIRST violation must fire #fail exactly once,
-		// and nothing after it should trigger a second close.
+		// and nothing after it can trigger a second close.
 		const violation = encodeWebSocketFrame(WEBSOCKET_OPCODE_TEXT, 'unmasked breach')
 		const garbage = randomBuffer(seededRandom(4), 64)
 		client.write(Buffer.concat([violation, garbage]))

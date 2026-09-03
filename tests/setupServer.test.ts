@@ -1,11 +1,29 @@
-// Proof of `tests/setupServer.ts` — the Node-only fixtures the server source tests share:
-// a cross-wired in-memory Duplex pair, a propagation wait, deterministic random bytes, a
-// FIN-controllable frame encoder, and a client-frame collector. Real `node:stream` Duplex
-// instances drive every case; nothing here is replaced.
+// Proof of `tests/setupServer.ts` — the Node-only fixtures the server source tests and the
+// `integration` project's global setup share: a cross-wired in-memory Duplex pair, a
+// propagation wait, deterministic random bytes, the seeded length-form corpus, a
+// FIN-controllable frame encoder, a client-frame collector, and the real echo server. Real
+// `node:stream` Duplex instances and a real loopback server drive every case; nothing here
+// is replaced.
 
 import { describe, expect, it } from 'vitest'
 import { encodeWebSocketFrame, WEBSOCKET_OPCODE_BINARY, WEBSOCKET_OPCODE_TEXT } from '@src/server'
-import { duplexPair, flushSocket, frame, randomBuffer, readClientFrames } from './setupServer.js'
+import { seededRandom } from '@orkestrel/contract'
+import { requireValue } from '@orkestrel/test'
+import {
+	buildCorpus,
+	createEchoServer,
+	duplexPair,
+	flushSocket,
+	frame,
+	randomBuffer,
+	readClientFrames,
+} from './setupServer.js'
+import {
+	connect,
+	INTEGRATION_COUNT_PREFIX,
+	INTEGRATION_COUNT_REQUEST,
+	nextMessage,
+} from './setup.js'
 
 describe('duplexPair', () => {
 	it('cross-wires real Duplex ends: each end reads what its partner writes, both directions', async () => {
@@ -114,10 +132,63 @@ describe('readClientFrames', () => {
 		await flushSocket()
 
 		expect(collector.frames.length).toBe(1)
-		const [received] = collector.frames
-		expect(received).toBeDefined()
-		if (received === undefined) throw new Error('unreachable: length checked above')
+		const received = requireValue(collector.frames[0], 'readClientFrames collected no frame')
 		expect(received.opcode).toBe(WEBSOCKET_OPCODE_TEXT)
 		expect(received.payload.toString()).toBe('echo: hi')
+	})
+})
+
+describe('buildCorpus', () => {
+	it('spans every declared length form and is deterministic for a repeated seed', () => {
+		const corpus = buildCorpus(seededRandom(1))
+		const lengths = new Set(corpus.map((payload) => payload.length))
+
+		for (const length of [0, 1, 125, 126, 127, 65_535, 65_536]) {
+			expect(lengths.has(length)).toBe(true)
+		}
+		for (const length of [70_000, 90_000, 120_000, 150_000, 200_000]) {
+			expect(lengths.has(length)).toBe(true)
+		}
+
+		const repeated = buildCorpus(seededRandom(1))
+		expect(repeated.length).toBe(corpus.length)
+		expect(repeated.every((payload, index) => payload.equals(requireValue(corpus[index])))).toBe(
+			true,
+		)
+	})
+
+	it('draws different bytes from a different seed, so the seed is what fixes the corpus', () => {
+		const first = buildCorpus(seededRandom(1))
+		const second = buildCorpus(seededRandom(2))
+		const differing = first.findIndex(
+			(payload, index) => !payload.equals(requireValue(second[index])),
+		)
+		expect(differing).toBeGreaterThanOrEqual(0)
+	})
+})
+
+describe('createEchoServer', () => {
+	it('echoes a text frame back to a real client and tracks the live socket', async () => {
+		const fixture = await createEchoServer()
+		try {
+			expect(fixture.url).toMatch(/^ws:\/\/127\.0\.0\.1:\d+$/u)
+			const ws = await connect(fixture.url)
+			ws.send('hi')
+			expect(String((await nextMessage(ws)).data)).toBe('echo: hi')
+			expect(fixture.sockets.size).toBe(1)
+			ws.close()
+		} finally {
+			await fixture.destroy()
+		}
+	})
+
+	it('answers the count command with the live socket total and clears the set on destroy', async () => {
+		const fixture = await createEchoServer()
+		const ws = await connect(fixture.url)
+		ws.send(INTEGRATION_COUNT_REQUEST)
+		expect(String((await nextMessage(ws)).data)).toBe(`${INTEGRATION_COUNT_PREFIX}1`)
+
+		await fixture.destroy()
+		expect(fixture.sockets.size).toBe(0)
 	})
 })

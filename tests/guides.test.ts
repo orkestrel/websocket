@@ -1,6 +1,8 @@
 // The consumer-side guides-parity drop-in: runs `@orkestrel/guide`'s checks against
-// this repo's own `guides/README.md` manifest. The five constants below are this
-// package's own, and are the only part a sibling package changes.
+// this repo's own `guides/README.md` manifest. The constants that follow are this
+// package's own, and are the only part a sibling package changes. The flagship-fence
+// transcriptions at the end of the file assert the values each fence's comments claim:
+// change a fence, change the transcription beside it.
 
 import { describe, expect, it } from 'vitest'
 import {
@@ -20,6 +22,14 @@ import {
 import { readFileSync } from 'node:fs'
 import { requireValue } from '@orkestrel/test'
 import { readInventory } from '@orkestrel/test/server'
+import {
+	computeWebSocketAccept,
+	createNodeWebSocket,
+	encodeWebSocketFrame,
+	WEBSOCKET_OPCODE_CLOSE,
+	WEBSOCKET_OPCODE_TEXT,
+} from '@src/server'
+import { duplexPair, flushSocket, readClientFrames } from './setupServer.js'
 
 /** Every fence language this package's guides are allowed to use. */
 const FENCE_LANGUAGES = Object.freeze(['ts'])
@@ -32,8 +42,9 @@ const MODULES = Object.freeze({ '@orkestrel/websocket': 'src/server', '@src/serv
  *
  * A class that one-class-per-file evicted from its single consumer cannot become a
  * local, so it stays exported without being public. Naming it here is what makes that
- * intentional rather than forgotten — and the second assertion below fails when a name
- * here stops being stranded, so the list cannot rot.
+ * intentional rather than forgotten — and the `names no symbol internal that the barrel
+ * already exports` assertion fails when a name here stops being stranded, so the list
+ * cannot rot.
  */
 const INTERNAL: readonly string[] = Object.freeze([])
 
@@ -168,3 +179,85 @@ for (const entry of manifest) {
 		})
 	})
 }
+
+// The flagship fences of `guides/websocket.md`, transcribed and asserted on the values
+// their comments claim. Name resolution is not a behavioural proof, so a fence documenting
+// a value the code contradicts satisfies every parity assertion in this file; only an
+// executed transcription breaks on it. The `## Surface` and `## Patterns` fences take an
+// upgraded socket from a live `node:http` server, so they run here over the in-memory
+// Duplex pair `tests/setupServer.ts` builds, which is the same real bidirectional socket
+// without the listener.
+
+// The canonical `Sec-WebSocket-Key` of RFC 6455 §1.3, standing in for the request header
+// the two server-mode fences read.
+const FENCE_KEY = 'dGhlIHNhbXBsZSBub25jZQ=='
+
+describe('flagship fences', () => {
+	it('the Surface fence echoes a client text frame back as `echo: <text>`', async () => {
+		const [server, client] = duplexPair()
+		const collector = readClientFrames(client)
+		const headers: Record<string, string | readonly string[] | undefined> = {
+			'sec-websocket-key': FENCE_KEY,
+		}
+
+		const key = headers['sec-websocket-key']
+		if (typeof key !== 'string') throw new Error('the fence narrows the header to a string key')
+		const ws = createNodeWebSocket({
+			socket: server,
+			key, // present => server mode + 101 handshake
+			on: { message: (text) => ws.send(`echo: ${text}`) },
+		})
+		const closes: Array<number | undefined> = []
+		ws.emitter.on('close', (code) => closes.push(code))
+		await flushSocket()
+
+		client.write(encodeWebSocketFrame(WEBSOCKET_OPCODE_TEXT, 'hello', { masked: true }))
+		await flushSocket()
+
+		expect(collector.frames.map((frame) => frame.payload.toString('utf-8'))).toEqual([
+			'echo: hello',
+		])
+
+		// The fence's `close` listener: the peer's close frame is echoed, the socket ends,
+		// and the final `close` carries the peer's code.
+		const closePayload = Buffer.alloc(2)
+		closePayload.writeUInt16BE(1000, 0)
+		client.write(encodeWebSocketFrame(WEBSOCKET_OPCODE_CLOSE, closePayload, { masked: true }))
+		await flushSocket()
+		expect(closes).toEqual([1000])
+	})
+
+	it('the Patterns fence echoes through an `emitter` listener attached after construction', async () => {
+		const [server, client] = duplexPair()
+		const collector = readClientFrames(client)
+
+		const ws = createNodeWebSocket({ socket: server, key: FENCE_KEY })
+		ws.emitter.on('message', (text) => ws.send(`echo: ${text}`))
+		await flushSocket()
+
+		client.write(encodeWebSocketFrame(WEBSOCKET_OPCODE_TEXT, 'pattern', { masked: true }))
+		await flushSocket()
+
+		expect(collector.frames.map((frame) => frame.payload.toString('utf-8'))).toEqual([
+			'echo: pattern',
+		])
+		ws.destroy()
+	})
+
+	it('the encoder fence writes a server frame unmasked and a client frame masked', () => {
+		const unmasked = encodeWebSocketFrame(WEBSOCKET_OPCODE_TEXT, 'hello')
+		const masked = encodeWebSocketFrame(WEBSOCKET_OPCODE_TEXT, 'hello', { masked: true })
+
+		// server→client: FIN + text opcode, the 7-bit length form, and the mask bit clear.
+		expect([...unmasked]).toEqual([0x81, 0x05, 0x68, 0x65, 0x6c, 0x6c, 0x6f])
+		expect(unmasked.readUInt8(1) & 0x80).toBe(0)
+		// client→server: the same header with the mask bit set, so the bytes differ.
+		expect(masked.readUInt8(0)).toBe(0x81)
+		expect(masked.readUInt8(1) & 0x80).toBe(0x80)
+		expect(masked.equals(unmasked)).toBe(false)
+	})
+
+	it('the accept-token fence returns the RFC 6455 §1.3 worked example', () => {
+		expect(computeWebSocketAccept('dGhlIHNhbXBsZSBub25jZQ==')).toBe('s3pPLMBiTxaQ9kYGzzhZRbK+xOo=')
+	})
+})

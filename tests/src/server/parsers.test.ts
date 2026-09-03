@@ -3,7 +3,6 @@ import {
 	encodeWebSocketFrame,
 	measureWebSocketFrame,
 	parseUTF8,
-	parseWebSocketCanonical,
 	parseWebSocketFrame,
 	WEBSOCKET_OPCODE_BINARY,
 	WEBSOCKET_OPCODE_CLOSE,
@@ -14,16 +13,17 @@ import {
 import { seededRandom } from '@orkestrel/contract'
 import { requireValue } from '@orkestrel/test'
 import { buildText } from '../../setup.js'
-import { frame, randomBuffer } from '../../setupServer.js'
+import { buildCorpus, frame, randomBuffer } from '../../setupServer.js'
 
-// The RFC 6455 coercers as pure units (no socket, AGENTS §16) — asserted against the
-// spec's OWN worked byte vectors so the bit-level mechanics are pinned exactly: the
-// unmasked + masked "Hello" frames (§5.7), the 7/16/64-bit length-form boundaries, the
-// control opcodes, an INCOMPLETE buffer returning `undefined` until the frame is
-// whole, a frame followed by trailing bytes (so `consumed` lets the caller recover the
-// remainder), the encode↔parse inverse for masked and unmasked frames, valid and
-// malformed UTF-8, and the §5.2 minimal-length-encoding check. Determinism comes from
-// a SUPPLIED mask, so a "client" frame is byte-exact.
+// The RFC 6455 coercers as pure units — no socket, real implementations only — asserted
+// against the spec's OWN worked byte vectors so the bit-level mechanics are pinned
+// exactly: the unmasked + masked "Hello" frames (§5.7), the 7/16/64-bit length-form
+// boundaries, the control opcodes, an INCOMPLETE buffer returning `undefined` until the
+// frame is whole, a frame followed by trailing bytes (so `consumed` lets the caller
+// recover the remainder), the encode↔parse inverse for masked and unmasked frames, and
+// valid and malformed UTF-8. The §5.2 minimal-length-encoding predicate
+// `matchesWebSocketCanonical` lives in `helpers.test.ts`. Determinism comes from a
+// SUPPLIED mask, so a "client" frame is byte-exact.
 
 const HELLO = Buffer.from('Hello', 'utf-8') // 48 65 6c 6c 6f
 const MASK = Buffer.from([0x37, 0xfa, 0x21, 0x3d]) // the RFC §5.7 example mask key
@@ -78,7 +78,7 @@ describe('parseWebSocketFrame — incomplete buffers return undefined', () => {
 		expect(parseWebSocketFrame(Buffer.from([0x81, 0x85, 0x37, 0xfa]))).toBeUndefined()
 	})
 
-	it('returns undefined when the payload is split mid-body, then parses once complete', () => {
+	it('returns undefined when the payload is split mid-body, then parses after it is complete', () => {
 		const full = encodeWebSocketFrame(WEBSOCKET_OPCODE_TEXT, HELLO) // 7 bytes
 		// Every prefix shorter than the whole frame is incomplete.
 		for (let cut = 1; cut < full.length; cut += 1) {
@@ -185,26 +185,11 @@ describe('parseUTF8', () => {
 //
 // Every case here asserts the REAL invariant (round-trip equality, exact undefined,
 // ordering between `measure` and `parse`) rather than a "does not throw" placeholder.
-// A failure here is a potential codec bug, not a test to loosen (AGENTS §16 / the
-// battery spec's recorder-not-mock discipline extends to fuzz assertions too).
-
-// A bounded corpus spanning every length-form boundary: the 7-bit form (0, 1, 125),
-// the 126 + 16-bit boundary (126, 127, 65535), the 127 + 64-bit boundary (65536), plus
-// ~5 large payloads up to 200 KB — ~180 payloads total from a single seeded generator.
-function buildCorpus(): readonly Buffer[] {
-	const rng = seededRandom(1)
-	const lengths = [0, 1, 125, 126, 127, 65_535, 65_536]
-	const large = [70_000, 90_000, 120_000, 150_000, 200_000]
-	const corpus: Buffer[] = []
-	for (const length of lengths) {
-		for (let index = 0; index < 25; index += 1) corpus.push(randomBuffer(rng, length))
-	}
-	for (const length of large) corpus.push(randomBuffer(rng, length))
-	return corpus
-}
+// A failure here is a potential codec bug, not a test to loosen — the
+// recorder-not-mock discipline extends to fuzz assertions too.
 
 describe('codec properties — seeded round trips', () => {
-	const corpus = buildCorpus()
+	const corpus = buildCorpus(seededRandom(1))
 
 	it('round-trips a seeded random corpus at every length form (unmasked)', () => {
 		for (const payload of corpus) {
@@ -308,13 +293,13 @@ describe('codec properties — measurement and parsing agree', () => {
 		expect(measureWebSocketFrame(wire.subarray(0, 1))).toBeUndefined()
 		expect(parseWebSocketFrame(wire.subarray(0, 1))).toBeUndefined()
 
-		// Exactly the 4-byte length prefix (2 base + 2 extended) buffered: measure now
+		// Exactly the 4-byte length prefix (2 base + 2 extended) buffered: measure
 		// resolves the declared length, but parse is still undefined (mask + payload
 		// bytes are absent) — measure resolves strictly earlier than parse.
 		expect(measureWebSocketFrame(wire.subarray(0, 4))).toBe(300)
 		expect(parseWebSocketFrame(wire.subarray(0, 4))).toBeUndefined()
 
-		// The full wire: parse now agrees with what measure already reported.
+		// The full wire: parse agrees with what measure already reported.
 		expect(parseWebSocketFrame(wire)?.payload.length).toBe(300)
 	})
 })
@@ -369,47 +354,5 @@ describe('codec properties — UTF-8 acceptance', () => {
 		for (const bytes of malformed) {
 			expect(parseUTF8(bytes)).toBeUndefined()
 		}
-	})
-})
-
-// The RFC 6455 §5.2 minimal-length-encoding coercer as a pure unit (no socket, AGENTS
-// §16). `parseWebSocketCanonical` answers `undefined` while the length prefix is still
-// incomplete, `true` for each shortest form, and `false` for a non-minimal extended
-// length or a set 64-bit high bit. The canonical frames come from
-// `encodeWebSocketFrame`, which picks the shortest form independently, so the
-// assertion compares two mechanisms rather than re-deriving the answer.
-
-describe('parseWebSocketCanonical', () => {
-	it('accepts each shortest length form and waits for an incomplete prefix', () => {
-		expect(parseWebSocketCanonical(Buffer.from([0x81]))).toBeUndefined()
-		expect(parseWebSocketCanonical(Buffer.from([0x81, 125]))).toBe(true)
-		expect(
-			parseWebSocketCanonical(encodeWebSocketFrame(WEBSOCKET_OPCODE_BINARY, Buffer.alloc(126))),
-		).toBe(true)
-		expect(
-			parseWebSocketCanonical(encodeWebSocketFrame(WEBSOCKET_OPCODE_BINARY, Buffer.alloc(65_536))),
-		).toBe(true)
-	})
-
-	it('rejects non-minimal extended lengths and a set 64-bit high bit', () => {
-		const nonMinimal16 = Buffer.from([0x81, 126, 0, 125])
-		const nonMinimal64 = Buffer.alloc(10)
-		nonMinimal64.writeUInt8(0x81, 0)
-		nonMinimal64.writeUInt8(127, 1)
-		nonMinimal64.writeUInt32BE(0, 2)
-		nonMinimal64.writeUInt32BE(65_535, 6)
-		const highBit = Buffer.alloc(10)
-		highBit.writeUInt8(0x81, 0)
-		highBit.writeUInt8(127, 1)
-		highBit.writeUInt32BE(0x8000_0000, 2)
-
-		expect(parseWebSocketCanonical(nonMinimal16)).toBe(false)
-		expect(parseWebSocketCanonical(nonMinimal64)).toBe(false)
-		expect(parseWebSocketCanonical(highBit)).toBe(false)
-	})
-
-	it('waits for the extended length prefix before ruling', () => {
-		expect(parseWebSocketCanonical(Buffer.from([0x81, 126, 0]))).toBeUndefined()
-		expect(parseWebSocketCanonical(Buffer.from([0x81, 127, 0, 0, 0, 0, 0]))).toBeUndefined()
 	})
 })
