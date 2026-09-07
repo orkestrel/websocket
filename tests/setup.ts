@@ -11,7 +11,7 @@ import { waitForEvent } from '@orkestrel/test'
 // BMP-safe text builder over it, shared by every node AND browser-side test.
 
 /**
- * Build a deterministic, BMP-safe, guaranteed-valid-UTF-8 string of `length` code
+ * Builds a deterministic, BMP-safe, guaranteed-valid-UTF-8 string of `length` code
  * points, sampling each from `rng` while avoiding the surrogate range.
  *
  * @param rng - A seeded generator (see `seededRandom` from `@orkestrel/contract`)
@@ -50,7 +50,7 @@ export const INTEGRATION_COUNT_PREFIX = 'count: '
 const NEXT_EVENT_BUDGET_MS = 4_000
 
 /**
- * Open a `WebSocket` to `url` and resolve after it reaches the `open` state.
+ * Opens a `WebSocket` to `url` and resolves after it reaches the `open` state.
  *
  * @param url - The WebSocket URL to connect to
  * @returns A promise resolving to the opened socket
@@ -66,7 +66,7 @@ export function connect(url: string): Promise<WebSocket> {
 }
 
 /**
- * Resolve with the next `message` event received on `ws`.
+ * Resolves with the next `message` event received on `ws`.
  *
  * @param ws - The socket to listen on
  * @returns A promise resolving to the next {@link MessageEvent}
@@ -86,7 +86,7 @@ export async function nextMessage(ws: WebSocket): Promise<MessageEvent> {
 }
 
 /**
- * Resolve with the next `close` event received on `ws`.
+ * Resolves with the next `close` event received on `ws`.
  *
  * @param ws - The socket to listen on
  * @returns A promise resolving to the next {@link CloseEvent}

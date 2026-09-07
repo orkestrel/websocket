@@ -47,14 +47,14 @@ class DuplexEnd extends Duplex {
 	}
 }
 
-/** Create a real, cross-wired in-memory Duplex pair without harness error sinks. */
+/** Creates a real, cross-wired in-memory Duplex pair without harness error sinks. */
 export function duplexPair(): readonly [Duplex, Duplex] {
 	const toServer = new PassThrough()
 	const toClient = new PassThrough()
 	return [new DuplexEnd(toServer, toClient), new DuplexEnd(toClient, toServer)]
 }
 
-/** Wait for frame writes to propagate across a {@link duplexPair}. */
+/** Waits for frame writes to propagate across a {@link duplexPair}. */
 export function flushSocket(): Promise<void> {
 	return new Promise((resolve) => setImmediate(() => setImmediate(resolve)))
 }
@@ -66,14 +66,14 @@ export interface TestFrameOptions {
 	readonly mask?: Buffer
 }
 
-/** The live echo fixture: the URL clients dial, the sockets it holds, and its teardown. */
+/** Represents the live echo fixture: the URL clients dial, the sockets it holds, and its teardown. */
 export interface EchoServerInterface {
 	readonly url: string
 	readonly sockets: ReadonlySet<NodeWebSocketInterface>
 	destroy(): Promise<void>
 }
 
-/** Build deterministic pseudo-random bytes from a seeded generator. */
+/** Builds deterministic pseudo-random bytes from a seeded generator. */
 export function randomBuffer(rng: () => number, length: number): Buffer {
 	const buffer = Buffer.alloc(length)
 	for (let index = 0; index < length; index += 1) buffer[index] = Math.floor(rng() * 256)
@@ -81,7 +81,7 @@ export function randomBuffer(rng: () => number, length: number): Buffer {
 }
 
 /**
- * Build the frame-payload corpus that spans every RFC 6455 length form: the 7-bit form
+ * Builds the frame-payload corpus that spans every RFC 6455 length form: the 7-bit form
  * (0, 1, 125), the 126 + 16-bit boundary (126, 127, 65 535), the 127 + 64-bit boundary
  * (65 536), then large payloads up to 200 KB.
  *
@@ -99,7 +99,7 @@ export function buildCorpus(rng: () => number): readonly Buffer[] {
 	return corpus
 }
 
-/** Encode one test frame, optionally clearing FIN for fragmentation cases. */
+/** Encodes one wire message for tests, optionally clearing FIN for fragmentation cases. */
 export function frame(
 	opcode: number,
 	payload: Buffer | string,
@@ -113,7 +113,7 @@ export function frame(
 }
 
 /**
- * Collect frames written to a pair's client endpoint after stripping the HTTP upgrade
+ * Collects frames written to a pair's client endpoint after stripping the HTTP upgrade
  * response. The returned array grows as complete frames arrive.
  */
 export function readClientFrames(client: Duplex): { readonly frames: readonly WebSocketFrame[] } {
@@ -167,7 +167,7 @@ class EchoServer implements EchoServerInterface {
 }
 
 /**
- * Start a real loopback `node:http` server that upgrades every WebSocket request to a
+ * Starts a real loopback `node:http` server that upgrades every WebSocket request to a
  * server-mode `createNodeWebSocket` and echoes each text frame back as `echo: <text>`.
  *
  * @returns The listening fixture — its `ws://` URL, its live sockets, and its teardown
