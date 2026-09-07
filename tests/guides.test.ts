@@ -1,8 +1,6 @@
 // The consumer-side guides-parity drop-in: runs `@orkestrel/guide`'s checks against
 // this repo's own `guides/README.md` manifest. The constants that follow are this
-// package's own, and are the only part a sibling package changes. The flagship-fence
-// transcriptions at the end of the file assert the values each fence's comments claim:
-// change a fence, change the transcription beside it.
+// package's own, and are the only part a sibling package changes.
 
 import { describe, expect, it } from 'vitest'
 import {
@@ -21,7 +19,7 @@ import {
 	resolveLink,
 } from '@orkestrel/guide'
 import { readFileSync } from 'node:fs'
-import { requireValue } from '@orkestrel/test'
+import { createRecorder, requireValue } from '@orkestrel/test'
 import { readInventory } from '@orkestrel/test/server'
 import {
 	computeWebSocketAccept,
@@ -45,9 +43,8 @@ const MODULES = Object.freeze({ '@orkestrel/websocket': 'src/server', '@src/serv
  *
  * A class that one-class-per-file evicted from its single consumer cannot become a
  * local, so it stays exported without being public. Naming it here is what makes that
- * intentional rather than forgotten — and the `names no symbol internal that the barrel
- * already exports` assertion fails when a name here stops being stranded, so the list
- * cannot rot.
+ * intentional rather than forgotten — and the assertion that follows it fails when a name
+ * here stops being stranded, so the list cannot rot.
  */
 const INTERNAL: readonly string[] = Object.freeze([])
 
@@ -219,19 +216,19 @@ for (const entry of manifest) {
 		for (const group of guide.methods()) {
 			const entity = group.interface.replace(/Interface$/, '')
 			const documented = group.methods.map((method) => method.name)
+			const examples =
+				entity === group.interface
+					? source.examples(group.interface).map((example) => example.name)
+					: source
+							.examples(group.interface)
+							.map((example) => example.name)
+							.concat(source.examples(entity).map((example) => example.name))
 			describe(`${group.interface} examples`, () => {
 				it('documents an example for every method', () => {
 					const fences = guide
 						.fences()
 						.filter((fence) => fence.language === EXAMPLE_LANGUAGE)
 						.map((fence) => fence.code)
-					const examples =
-						entity === group.interface
-							? source.examples(group.interface).map((example) => example.name)
-							: source
-									.examples(group.interface)
-									.map((example) => example.name)
-									.concat(source.examples(entity).map((example) => example.name))
 					expect(findUnexampled(documented, fences, examples)).toEqual([])
 				})
 			})
@@ -273,10 +270,10 @@ for (const entry of manifest) {
 // executed transcription breaks on it. The `## Surface` and `## Patterns` fences take an
 // upgraded socket from a live `node:http` server, so they run here over the in-memory
 // Duplex pair `tests/setupServer.ts` builds, which is the same real bidirectional socket
-// without the listener.
+// without the listener. Change a fence, change the transcription beside it.
 
 // The canonical `Sec-WebSocket-Key` of RFC 6455 §1.3, standing in for the request header
-// the two server-mode fences read.
+// each server-mode fence reads.
 const FENCE_KEY = 'dGhlIHNhbXBsZSBub25jZQ=='
 
 describe('flagship fences', () => {
@@ -314,20 +311,28 @@ describe('flagship fences', () => {
 		expect(closes).toEqual([1000])
 	})
 
-	it('the Patterns fence echoes through an `emitter` listener attached after construction', async () => {
+	it('the Patterns fence echoes from its construction hook and hands the same message to a second observer', async () => {
 		const [server, client] = duplexPair()
 		const collector = readClientFrames(client)
+		const observed = createRecorder<readonly [message: string]>()
 
-		const ws = createNodeWebSocket({ socket: server, key: FENCE_KEY })
-		ws.emitter.on('message', (text) => ws.send(`echo: ${text}`))
+		const ws = createNodeWebSocket({
+			socket: server,
+			key: FENCE_KEY,
+			on: { message: (text) => ws.send(`echo: ${text}`) }, // wired before the first frame arrives
+		})
+		ws.emitter.on('message', observed.handler) // a second observer of the same event
 		await flushSocket()
 
 		client.write(encodeWebSocketFrame(WEBSOCKET_OPCODE_TEXT, 'pattern', { masked: true }))
 		await flushSocket()
 
+		// One echo, not two: the fence's later listener observes the message and the
+		// construction hook is what answers it.
 		expect(collector.frames.map((frame) => frame.payload.toString('utf-8'))).toEqual([
 			'echo: pattern',
 		])
+		expect(observed.calls).toEqual([['pattern']])
 		ws.destroy()
 	})
 

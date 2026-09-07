@@ -47,14 +47,14 @@ import {
  * and surfacing every event on an owned `emitter`.
  *
  * @remarks
- * Created by `createNodeWebSocket`. When given a client `key` it runs in SERVER mode —
+ * Created by `createNodeWebSocket`. When given a client `key` it runs in server mode —
  * it writes the `101 Switching Protocols` handshake (`computeWebSocketAccept(key)`) and
- * emits `open`; given no key it runs in CLIENT mode (no handshake, frames masked). It
+ * emits `open`; given no key it runs in client mode (no handshake, frames masked). It
  * then listens on the socket's `data`, accumulating bytes in `#buffer` and decoding
  * every complete frame with {@link parseWebSocketFrame} (slicing `consumed` and
- * re-parsing the remainder): a TEXT frame — reassembling continuation fragments across
- * `fin: false` frames — decodes to UTF-8 and emits `message`; a PING is auto-answered
- * with a PONG and emits `ping`; a PONG emits `pong`; a CLOSE is echoed and ends the
+ * re-parsing the remainder): a text frame — reassembling continuation fragments across
+ * `fin: false` frames — decodes to UTF-8 and emits `message`; a ping is auto-answered
+ * with a pong and emits `ping`; a pong emits `pong`; a close frame is echoed and ends the
  * socket, emitting `close`. `send` writes a text frame, `ping` a ping, `close` a close
  * frame; `destroy` tears down immediately. It owns a typed `#emitter` by composition, and
  * the emitter isolates a throwing listener and routes the error to its own `error` handler
@@ -102,8 +102,8 @@ export class NodeWebSocket implements NodeWebSocketInterface {
 	 * Creates a WebSocket wrapper over an already-upgraded Duplex socket.
 	 *
 	 * @remarks
-	 * `key` selects the mode: present runs SERVER mode and writes the `101 Switching
-	 * Protocols` handshake, omitted runs CLIENT mode and masks every outgoing frame.
+	 * `key` selects the mode: present runs server mode and writes the `101 Switching
+	 * Protocols` handshake, omitted runs client mode and masks every outgoing frame.
 	 * {@link NodeWebSocketOptions} describes every member.
 	 *
 	 * @param options - The {@link NodeWebSocketOptions} the wrapper is built from
@@ -185,8 +185,8 @@ export class NodeWebSocket implements NodeWebSocketInterface {
 		// `@orkestrel/timeout`'s native AbortSignals) — wired last so an already-aborted
 		// signal tears the socket down only after the rest of construction has run. The
 		// preceding head replay can itself synchronously terminate the socket (a complete
-		// CLOSE frame or an RFC violation routes through `#fail`/`#close` -> `#finish`),
-		// which flushes the close frame GRACEFULLY through `#socket.end()`. In that case skip
+		// close frame or an RFC violation routes through `#fail`/`#close` -> `#finish`),
+		// which flushes the close frame gracefully through `#socket.end()`. In that case skip
 		// the seam entirely: forcing `destroy()` would discard that flushing frame (the
 		// loss `#fail` is engineered to avoid), and there is no live socket to attach to.
 		if (this.#readyState !== WEBSOCKET_READY_CLOSED) {
@@ -262,7 +262,7 @@ export class NodeWebSocket implements NodeWebSocketInterface {
 		// Detach before destroy so a destroy-time error reaches the terminal sink.
 		this.#detach()
 		this.#signal?.removeEventListener('abort', this.#abortListener)
-		// `#finish` no-ops after the state is already CLOSED (for example after `#fail` armed
+		// `#finish` no-ops after the state is already closed (for example after `#fail` armed
 		// the hard-teardown fallback), so the timer is cleared here unconditionally rather
 		// than relying on it.
 		clearTimeout(this.#closeTimer)
@@ -370,8 +370,9 @@ export class NodeWebSocket implements NodeWebSocketInterface {
 		this.#fragmentBytes = 0
 	}
 
-	// Handle a validated CLOSE frame: decode it (which itself may `#fail` on an invalid
-	// code/reason), then — if still OPEN — echo the peer's payload verbatim and end.
+	// Handle a validated close frame: decode it (which itself may `#fail` on an invalid
+	// code/reason), then — if the socket is still open — echo the peer's payload verbatim
+	// and end.
 	#close(payload: Buffer): void {
 		const valid = this.#decodeClose(payload)
 		if (!valid) return
@@ -389,10 +390,10 @@ export class NodeWebSocket implements NodeWebSocketInterface {
 	// The single funnel for every RFC 6455 validation breach: close with `code`, `#detach`
 	// the domain listeners (the connection is protocol-dead — RFC 6455 permits discarding
 	// further input after sending close, and this also stops a post-fail socket `error`
-	// emitting AFTER the terminal `close` event), write the close frame, then flush + half
+	// emitting after the terminal `close` event), write the close frame, then flush + half
 	// -close through `end()` (never a synchronous `destroy()`, which can discard the buffered
 	// close frame and leave the peer seeing 1006 instead of the intended code) before
-	// finishing. The hard-teardown fallback is armed AFTER `#finish` so `#finish`'s
+	// finishing. The hard-teardown fallback is armed after `#finish` so `#finish`'s
 	// `clearTimeout` cannot kill it; the normal path destroys the moment the write buffer
 	// flushes (the `end()` callback), the unref'd timer is only the malicious-peer backstop.
 	#fail(code: number, reason?: string): void {
@@ -489,7 +490,7 @@ export class NodeWebSocket implements NodeWebSocketInterface {
 		return true
 	}
 
-	// Transition to CLOSED one time only (idempotent), clear the close-handshake timer, and emit
+	// Transition to the closed state one time only (idempotent), clear the close-handshake timer, and emit
 	// the final `close` with the last known code/reason.
 	#finish(): void {
 		if (this.#readyState === WEBSOCKET_READY_CLOSED) return
@@ -502,7 +503,7 @@ export class NodeWebSocket implements NodeWebSocketInterface {
 	}
 
 	// Append `bytes` to the accumulation buffer, then drain every complete frame. `#drain`
-	// preflights canonical encoding and the declared payload cap on EACH iteration, so
+	// preflights canonical encoding and the declared payload cap on each iteration, so
 	// every coalesced frame receives the same validation. Shared by `#handleData` and head replay.
 	#ingest(bytes: Buffer): void {
 		this.#buffer = Buffer.concat([this.#buffer, bytes])

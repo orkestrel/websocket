@@ -15,7 +15,7 @@ import type { WebSocketFrame } from './types.js'
  * Reads the FIN bit and opcode (byte 0), the mask bit and 7-bit payload length (byte
  * 1) — extended to a 16-bit length when the 7-bit field is `126`, or a 64-bit length
  * when it is `127` — the optional 4-byte mask key, then the payload, XOR-unmasking it
- * against the key when the mask bit is set (client→server frames MUST be masked, RFC
+ * against the key when the mask bit is set (client→server frames must be masked, RFC
  * 6455 §5.3; an unmasked frame still decodes, leaving the payload as-is, so the caller
  * can enforce policy). The incomplete answer comes the moment the buffer is too short
  * for the part it is up to: the length prefix, the mask, or the full payload.

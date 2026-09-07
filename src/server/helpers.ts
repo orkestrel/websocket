@@ -113,7 +113,7 @@ export function matchesWebSocketCanonical(buffer: Buffer): boolean | undefined {
  * the 7-bit form below 126, the `126` + 16-bit form below 65 536, or the `127` +
  * 64-bit form beyond; when `masked` is set the mask bit is set, a 4-byte key (supplied
  * through `options.mask`, else random) is written, and the payload is XOR-masked. Server→
- * client frames are unmasked (the default); pass `masked: true` to encode a CLIENT
+ * client frames are unmasked (the default); pass `masked: true` to encode a client
  * frame (for example to feed the parser in a test). A `string` payload is encoded as
  * UTF-8. Returns one contiguous `Buffer` (header + payload), so the wrapper writes it
  * with a single `socket.write`. Pure.

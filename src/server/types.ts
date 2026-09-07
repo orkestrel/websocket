@@ -2,10 +2,10 @@ import type { Duplex } from 'node:stream'
 import type { EmitterErrorHandler, EmitterHooks, EmitterInterface } from '@orkestrel/emitter'
 
 // The lean server-native WebSocket surface — a typed wrapper over a raw upgraded
-// `node:stream` Duplex socket that speaks ONLY the RFC 6455 wire protocol. It
+// `node:stream` Duplex socket that speaks only the RFC 6455 wire protocol. It
 // exposes the WebSocket framing the rest of the codebase cannot express — the
 // handshake, masked/unmasked frames, ping/pong, close — and nothing above it: this
-// wrapper has NO knowledge of MCP, JSON-RPC, or any message schema (that is the
+// wrapper has no knowledge of MCP, JSON-RPC, or any message schema (that is the
 // transport one layer up). It is the lean-native-wrapper sibling of the SQLite and
 // IndexedDB wrappers: a minimal interface over native power, errors surfaced through
 // the emitter, the codec a set of pure, exported, unit-tested helpers. This file is the
@@ -18,8 +18,8 @@ import type { EmitterErrorHandler, EmitterHooks, EmitterInterface } from '@orkes
 // === Ready state
 
 /**
- * Represents a WebSocket ready state — the browser-compatible `0` connecting, `1` open,
- * `2` closing, and `3` closed.
+ * Represents a WebSocket ready state — the stage a connection has reached between the
+ * handshake and the socket's end.
  *
  * @remarks
  * The same numbering the DOM `WebSocket.readyState` uses, so the wrapper reads like the
@@ -38,7 +38,7 @@ export type WebSocketReadyState = 0 | 1 | 2 | 3
  * the already-unmasked application data; `consumed` is the total byte count the frame
  * occupied (header + mask + payload), so the caller slices it off the front of its
  * accumulation buffer and re-parses the remainder. `masked` is the mask bit off byte 1
- * (client→server frames MUST be masked, RFC 6455 §5.1); `rsv` is the three reserved
+ * (client→server frames must be masked, RFC 6455 §5.1); `rsv` is the three reserved
  * bits off byte 0 packed into a single 0–7 value (RFC 6455 §5.2) — non-zero means an
  * extension the wrapper does not negotiate, so the caller rejects it. Produced by
  * {@link parseWebSocketFrame}.
@@ -56,8 +56,8 @@ export interface WebSocketFrame {
  * Represents the options for {@link encodeWebSocketFrame} — how a frame is masked on the wire.
  *
  * @remarks
- * `masked` toggles the mask bit (server→client frames are NOT masked, the default;
- * client→server frames MUST be, RFC 6455 §5.3). `mask` supplies an explicit 4-byte
+ * `masked` toggles the mask bit (server→client frames are not masked, the default;
+ * client→server frames must be, RFC 6455 §5.3). `mask` supplies an explicit 4-byte
  * mask key (deterministic, for tests); when `masked` is true and `mask` is omitted a
  * random key is generated.
  */
@@ -69,8 +69,7 @@ export interface WebSocketEncodeOptions {
 // === Errors
 
 /**
- * Represents the subject a `WebSocketError` names as refused — `OPTION`, `LIMIT`,
- * `CLOSE`, or `FRAME`.
+ * Represents the subject a `WebSocketError` names as refused.
  *
  * @remarks
  * `OPTION` — a {@link NodeWebSocketOptions} member was refused at construction
@@ -87,14 +86,13 @@ export type WebSocketErrorCode = 'OPTION' | 'LIMIT' | 'CLOSE' | 'FRAME'
 // === Events
 
 /**
- * Represents the event map a {@link NodeWebSocketInterface} emitter carries — `open`,
- * `message`, `close`, `error`, `ping`, and `pong`.
+ * Represents the event map a {@link NodeWebSocketInterface} emitter carries.
  *
  * @remarks
  * `open` — the handshake completed and the socket is ready. `message` — a text frame
  * arrived (its decoded UTF-8 string). `close` — the connection ended, carrying the
  * labeled `[code, reason]` tuple (each `undefined` when the peer sent none). `error` —
- * the underlying socket faulted (a DOMAIN event and then terminates the wrapper).
+ * the underlying socket faulted (a domain event, and then terminates the wrapper).
  * `ping` / `pong` — a control frame arrived (a ping is auto-answered with a pong).
  * Listener isolation is the emitter's: a listener throw is routed to the emitter's
  * `error` handler (the `error` option), never onto this map, so a buggy observer
@@ -118,14 +116,14 @@ export type NodeWebSocketEventMap = {
  *
  * @remarks
  * `socket` is the upgraded `node:stream` Duplex (the raw TCP stream after the HTTP
- * upgrade). `key` is the client's `Sec-WebSocket-Key`: present it to run in SERVER
- * mode — the wrapper writes the `101 Switching Protocols` handshake and sends UNMASKED
- * frames; omit it for CLIENT mode — no handshake is written and frames are MASKED (RFC
+ * upgrade). `key` is the client's `Sec-WebSocket-Key`: present it to run in server
+ * mode — the wrapper writes the `101 Switching Protocols` handshake and sends unmasked
+ * frames; omit it for client mode — no handshake is written and frames are masked (RFC
  * 6455 §5.3). `head` is any bytes buffered after the upgrade headers (replayed through
  * the parser). `protocol` is a negotiated subprotocol to echo in the handshake. `on`
  * wires initial listeners at construction — the reserved `on` option; `error` is the
  * emitter's listener-error handler, where a listener throw routes. `payload` caps
- * both a single inbound frame's declared length AND the total bytes of a reassembled
+ * both a single inbound frame's declared length and the total bytes of a reassembled
  * fragmented message (default `WEBSOCKET_MAX_PAYLOAD`) — a breach closes 1009. `timeout`
  * is how long the wrapper waits, after sending a close frame, for the peer's echo before
  * it gives up and tears the socket down (default `WEBSOCKET_CLOSE_TIMEOUT_MS`). `signal`
@@ -152,8 +150,7 @@ export interface NodeWebSocketOptions {
 
 /**
  * Represents the behavioral contract a server-native WebSocket exposes over a raw
- * upgraded socket — the `emitter` and `readyState` data members plus `send`, `ping`,
- * `close`, and `destroy`.
+ * upgraded socket.
  *
  * @remarks
  * Created by `createNodeWebSocket`. In server mode it writes the RFC 6455 handshake

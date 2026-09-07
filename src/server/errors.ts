@@ -7,7 +7,7 @@ import type { WebSocketErrorCode } from './types.js'
 // control payload, an unsendable close code, an unrepresentable frame header — and
 // each throws before it writes a byte: an OPTION before the wrapper assumes ownership
 // of the socket, a LIMIT and a CLOSE without writing a frame or moving `readyState`,
-// and a FRAME out of the pure encoder, which touches no socket. A PEER's protocol
+// and a FRAME out of the pure encoder, which touches no socket. A peer's protocol
 // violation is not an error: it closes the connection with the matching
 // `WEBSOCKET_CLOSE_*` status code instead.
 

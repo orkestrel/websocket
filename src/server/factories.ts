@@ -31,8 +31,9 @@ import { NodeWebSocket } from './NodeWebSocket.js'
  * 		socket,
  * 		key,
  * 		head, // any bytes already buffered after the upgrade headers
+ * 		on: { message: (text) => ws.send(`echo: ${text}`) }, // wired before the first frame arrives
  * 	})
- * 	ws.emitter.on('message', (text) => ws.send(`echo: ${text}`))
+ * 	ws.emitter.on('message', (text) => log('echoed', text)) // a second observer of the same event
  * 	ws.emitter.on('close', (code, reason) => log('closed', code, reason))
  * })
  * ```
