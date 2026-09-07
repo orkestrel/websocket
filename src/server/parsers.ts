@@ -8,7 +8,8 @@ import type { WebSocketFrame } from './types.js'
 // `isWebSocketKey`, `isWebSocketProtocol`, `isCloseCode` — live in `helpers.ts`.
 
 /**
- * Decodes a single RFC 6455 frame from the front of a buffer.
+ * Decodes a single RFC 6455 frame from the front of a buffer, answering `undefined`
+ * while the buffer is incomplete so the caller accumulates and retries.
  *
  * @remarks
  * Reads the FIN bit and opcode (byte 0), the mask bit and 7-bit payload length (byte
@@ -16,10 +17,10 @@ import type { WebSocketFrame } from './types.js'
  * when it is `127` — the optional 4-byte mask key, then the payload, XOR-unmasking it
  * against the key when the mask bit is set (client→server frames MUST be masked, RFC
  * 6455 §5.3; an unmasked frame still decodes, leaving the payload as-is, so the caller
- * can enforce policy). Returns `undefined` the moment the buffer is too short for the
- * part it is up to (the length prefix, the mask, or the full payload) — the signal to
- * the caller to read more bytes and retry. `consumed` is the total bytes the frame
- * occupied, so the caller slices the remainder. Pure; never throws on a short buffer.
+ * can enforce policy). The incomplete answer comes the moment the buffer is too short
+ * for the part it is up to: the length prefix, the mask, or the full payload.
+ * `consumed` is the total bytes the frame occupied, so the caller slices the remainder.
+ * Pure; never throws on a short buffer.
  *
  * @param buffer - The accumulation buffer to decode the next frame from
  * @returns The parsed {@link WebSocketFrame}, or `undefined` when the buffer is incomplete
@@ -79,12 +80,13 @@ export function parseWebSocketFrame(buffer: Buffer): WebSocketFrame | undefined 
 }
 
 /**
- * Decodes a byte sequence as strict UTF-8, or signals it is malformed.
+ * Decodes a byte sequence as strict UTF-8, answering `undefined` when the sequence is
+ * malformed.
  *
  * @remarks
- * Wraps `TextDecoder('utf-8', { fatal: true })` in a try/catch so a malformed sequence
- * returns `undefined` instead of throwing — a guard-adjacent coercer never throws on bad
- * input. Pure.
+ * Wraps `TextDecoder('utf-8', { fatal: true })` in a try/catch, so a malformed sequence
+ * returns rather than throwing — a guard-adjacent coercer never throws on bad input.
+ * Pure.
  *
  * @param bytes - The raw bytes to decode
  * @returns The decoded string, or `undefined` when `bytes` is not valid UTF-8

@@ -1,9 +1,14 @@
 # @orkestrel/websocket
 
-A dependency-light RFC 6455 WebSocket for Node — native handshake and framing
-over duplex streams, with a typed emitter surface. Part of the `@orkestrel`
-line. Its sole runtime dependency is `@orkestrel/emitter`, used for the typed
-`emitter` every connection exposes.
+> The server-native bidirectional transport: a lean, typed wrapper over a raw upgraded
+> `node:stream` Duplex socket that speaks only the RFC 6455 wire protocol, owning the
+> handshake, the masked and unmasked frame codec, ping and pong, and the close handshake,
+> and surfacing every message on an owned `emitter`.
+
+Take the socket a `node:http` upgrade handler gives you, pass it to the
+`createNodeWebSocket` function, and read every message off the returned handle's
+`emitter`. Its sole runtime dependency is `@orkestrel/emitter`, which supplies that
+typed emitter. Part of the `@orkestrel` line.
 
 ## Install
 
@@ -24,7 +29,7 @@ import { createServer } from 'node:http'
 import { createNodeWebSocket } from '@orkestrel/websocket'
 
 // A node:http server hands every upgrade request a raw socket; this wrapper takes it
-// from there. Passing the client's `sec-websocket-key` selects SERVER mode — the
+// from there. Passing the client's `sec-websocket-key` selects server mode — the
 // wrapper writes the 101 handshake, marks the connection open, and decodes frames.
 createServer().on('upgrade', (request, socket, head) => {
 	const key = request.headers['sec-websocket-key']

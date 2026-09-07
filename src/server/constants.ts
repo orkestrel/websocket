@@ -7,11 +7,12 @@ import type { WebSocketReadyState } from './types.js'
 // `NodeWebSocket` wrapper read them by name rather than re-spelling the bit values.
 
 /**
- * Names the RFC 6455 GUID concatenated to a client's `Sec-WebSocket-Key` before the SHA-1
- * hash that yields the `Sec-WebSocket-Accept` response value.
+ * Names the RFC 6455 GUID concatenated to a client's `Sec-WebSocket-Key` before the
+ * accept hash.
  *
  * @remarks
- * A fixed, spec-mandated constant (RFC 6455 §4.2.2) — read only by
+ * The base64-encoded SHA-1 of that concatenation is the `Sec-WebSocket-Accept` response
+ * value. A fixed, spec-mandated constant (RFC 6455 §4.2.2) — read only by
  * {@link computeWebSocketAccept}.
  */
 export const WEBSOCKET_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
@@ -55,7 +56,13 @@ export const WEBSOCKET_CLOSE_NORMAL = 1000
 /** Names the protocol-error status code (RFC 6455 §7.4.1) — a framing/state rule was violated. */
 export const WEBSOCKET_CLOSE_PROTOCOL = 1002
 
-/** Names the unsupported-data status code (RFC 6455 §7.4.1) — the endpoint received a data type it cannot accept, for example binary on a text-only endpoint. */
+/**
+ * Names the unsupported-data status code (RFC 6455 §7.4.1) — the endpoint received a data
+ * type it cannot accept.
+ *
+ * @remarks
+ * For example binary on a text-only endpoint.
+ */
 export const WEBSOCKET_CLOSE_UNSUPPORTED = 1003
 
 /** Names the invalid-frame-payload-data status code (RFC 6455 §7.4.1) — for example non-UTF-8 text or an unparseable close reason. */
@@ -64,13 +71,35 @@ export const WEBSOCKET_CLOSE_INVALID = 1007
 /** Names the message-too-big status code (RFC 6455 §7.4.1) — a reassembled message exceeded the payload cap. */
 export const WEBSOCKET_CLOSE_TOO_BIG = 1009
 
-/** Names the default maximum inbound single-frame length AND reassembled-message total byte count (100 MiB — the `ws` package default). */
+/**
+ * Names the default cap on both an inbound frame's declared length and a reassembled
+ * message's total byte count (100 MiB).
+ *
+ * @remarks
+ * The same value the `ws` package defaults to. Either breach closes
+ * {@link WEBSOCKET_CLOSE_TOO_BIG}.
+ */
 export const WEBSOCKET_MAX_PAYLOAD = 104_857_600
 
-/** Names the default close-handshake timeout in milliseconds — how long `close()` waits for the peer's echo before tearing the socket down. */
+/**
+ * Names the default close-handshake timeout in milliseconds — how long `close` waits for
+ * the peer's echo.
+ *
+ * @remarks
+ * After it expires the wrapper tears the socket down, so a silent peer cannot leak the
+ * handle open.
+ */
 export const WEBSOCKET_CLOSE_TIMEOUT_MS = 30_000
 
-/** Names the post-`#fail` flush grace in milliseconds — how long a validation-breach close frame is given to flush through the socket's write buffer before the hard `destroy()` fallback fires (the normal path destroys sooner, on the `end()` flush callback). */
+/**
+ * Names the flush grace in milliseconds a validation-breach close frame is given before
+ * the hard teardown fallback destroys the socket.
+ *
+ * @remarks
+ * Armed after `#fail` writes the close frame, so the frame drains through the socket's
+ * write buffer rather than being discarded. The normal path destroys sooner, on the
+ * `end()` flush callback.
+ */
 export const WEBSOCKET_FAIL_TIMEOUT_MS = 1_000
 
 /** Names the maximum control-frame payload length in bytes (RFC 6455 §5.5). */

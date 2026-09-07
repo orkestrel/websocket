@@ -12,15 +12,15 @@ import type { WebSocketErrorCode } from './types.js'
 // `WEBSOCKET_CLOSE_*` status code instead.
 
 /**
- * Represents an error thrown by the WebSocket wrapper for a refused caller-supplied value.
+ * Represents an error the WebSocket wrapper throws for a refused caller-supplied value,
+ * carrying a machine-readable `code` and an optional `context`.
  *
  * @remarks
- * Carries a {@link WebSocketErrorCode} and an optional `context` record holding the
- * refused value under a key naming it: an `'OPTION'` carries the offending option
- * (`payload`, `timeout`, `key`, or `protocol`), a `'LIMIT'` carries `size` and the
- * `limit` it exceeded, a `'CLOSE'` carries the refused close `code`, and a `'FRAME'`
- * carries `opcode` or the mask's `size`. Narrow a caught value with
- * {@link isWebSocketError}.
+ * The `code` is a {@link WebSocketErrorCode}; the `context` record holds the refused
+ * value under a key naming it: an `'OPTION'` carries the offending option (`payload`,
+ * `timeout`, `key`, or `protocol`), a `'LIMIT'` carries `size` and the `limit` it
+ * exceeded, a `'CLOSE'` carries the refused close `code`, and a `'FRAME'` carries
+ * `opcode` or the mask's `size`. Narrow a caught value with {@link isWebSocketError}.
  *
  * @example
  * ```ts
@@ -57,7 +57,8 @@ export class WebSocketError extends Error {
 }
 
 /**
- * Checks whether a value is a {@link WebSocketError}.
+ * Checks whether a caught value is a {@link WebSocketError}, narrowing it so a `catch` can
+ * branch on `error.code`.
  *
  * @param value - The value to test (typically a `catch` binding)
  * @returns True if `value` is a `WebSocketError`; false otherwise

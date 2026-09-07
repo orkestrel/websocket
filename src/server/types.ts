@@ -18,12 +18,12 @@ import type { EmitterErrorHandler, EmitterHooks, EmitterInterface } from '@orkes
 // === Ready state
 
 /**
- * Represents a WebSocket ready state — the four browser-compatible lifecycle values.
+ * Represents a WebSocket ready state — the browser-compatible `0` connecting, `1` open,
+ * `2` closing, and `3` closed.
  *
  * @remarks
- * `0` connecting, `1` open, `2` closing, `3` closed — the same numbering the DOM
- * `WebSocket.readyState` uses, so the wrapper reads like the platform API. The named
- * `WEBSOCKET_READY_*` constants spell each value.
+ * The same numbering the DOM `WebSocket.readyState` uses, so the wrapper reads like the
+ * platform API. The named `WEBSOCKET_READY_*` constants spell each value.
  */
 export type WebSocketReadyState = 0 | 1 | 2 | 3
 
@@ -69,7 +69,8 @@ export interface WebSocketEncodeOptions {
 // === Errors
 
 /**
- * Represents the subject an {@link import('./errors.js').WebSocketError} names as refused.
+ * Represents the subject a `WebSocketError` names as refused — `OPTION`, `LIMIT`,
+ * `CLOSE`, or `FRAME`.
  *
  * @remarks
  * `OPTION` — a {@link NodeWebSocketOptions} member was refused at construction
@@ -86,7 +87,8 @@ export type WebSocketErrorCode = 'OPTION' | 'LIMIT' | 'CLOSE' | 'FRAME'
 // === Events
 
 /**
- * Represents the event map of a {@link NodeWebSocketInterface}.
+ * Represents the event map a {@link NodeWebSocketInterface} emitter carries — `open`,
+ * `message`, `close`, `error`, `ping`, and `pong`.
  *
  * @remarks
  * `open` — the handshake completed and the socket is ready. `message` — a text frame
@@ -110,7 +112,9 @@ export type NodeWebSocketEventMap = {
 // === Options
 
 /**
- * Represents the options for `createNodeWebSocket`.
+ * Represents the options for `createNodeWebSocket` — the upgraded `socket`, the `key`
+ * that selects server or client mode, and the listeners, caps, and cancellation signal
+ * the wrapper runs under.
  *
  * @remarks
  * `socket` is the upgraded `node:stream` Duplex (the raw TCP stream after the HTTP
@@ -147,7 +151,9 @@ export interface NodeWebSocketOptions {
 // === Wrapper
 
 /**
- * Represents a server-native WebSocket over a raw upgraded socket — the behavioral contract.
+ * Represents the behavioral contract a server-native WebSocket exposes over a raw
+ * upgraded socket — the `emitter` and `readyState` data members plus `send`, `ping`,
+ * `close`, and `destroy`.
  *
  * @remarks
  * Created by `createNodeWebSocket`. In server mode it writes the RFC 6455 handshake
@@ -167,8 +173,49 @@ export interface NodeWebSocketOptions {
 export interface NodeWebSocketInterface {
 	readonly emitter: EmitterInterface<NodeWebSocketEventMap>
 	readonly readyState: WebSocketReadyState
+	/**
+	 * Writes a message as a UTF-8 text frame, masked in client mode and unmasked in server
+	 * mode, and does nothing unless `readyState` is open.
+	 *
+	 * @remarks
+	 * The peer's reply arrives back as a `message` event.
+	 *
+	 * @param message - The text to carry as the frame's payload
+	 */
 	send(message: string): void
+	/**
+	 * Writes a ping frame with an optional payload, which the peer answers with a pong, and
+	 * does nothing unless `readyState` is open.
+	 *
+	 * @remarks
+	 * The answering pong arrives as the `pong` event.
+	 *
+	 * @param payload - The optional UTF-8 payload to carry
+	 * @throws A `WebSocketError` coded `LIMIT` when the UTF-8 payload exceeds
+	 *   `WEBSOCKET_CONTROL_MAX_LENGTH`
+	 */
 	ping(payload?: string): void
+	/**
+	 * Starts the closing handshake: moves to the closing ready state, writes a close frame
+	 * carrying the two-byte big-endian `code` and an optional `reason`, and ends the
+	 * writable side.
+	 *
+	 * @remarks
+	 * The final `close` event fires after the peer echoes or the socket ends, and a second
+	 * call is a no-op. Each refusal leaves `readyState` unchanged.
+	 *
+	 * @param code - The close status code, defaulting to `WEBSOCKET_CLOSE_NORMAL`
+	 * @param reason - The optional UTF-8 reason to carry after the code
+	 * @throws A `WebSocketError` coded `CLOSE` for an invalid or fractional `code`, and one
+	 *   coded `LIMIT` for a `reason` over `WEBSOCKET_CLOSE_REASON_MAX_LENGTH`
+	 */
 	close(code?: number, reason?: string): void
+	/**
+	 * Tears the socket down immediately: detaches the wrapper's domain socket listeners,
+	 * destroys the socket, emits a final `close`, and tears the emitter down.
+	 *
+	 * @remarks
+	 * Idempotent, and a hard stop rather than a handshake.
+	 */
 	destroy(): void
 }

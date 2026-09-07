@@ -31,15 +31,15 @@ export function computeWebSocketAccept(key: string): string {
 }
 
 /**
- * Reads the declared payload length off the front of a buffer, without buffering or
- * reading the payload itself.
+ * Reads the declared payload length off the front of a buffer without buffering or
+ * reading the payload itself, answering `undefined` until the length field is complete.
  *
  * @remarks
  * Decodes only byte 1's 7-bit length field, extended by the 16-bit (`126`) or 64-bit
  * (`127`) form exactly like `parseWebSocketFrame` — but stops there, so a caller
  * can reject an over-cap frame the moment its length is known, before the payload
- * bytes have even arrived. Returns `undefined` until the length field itself is fully
- * buffered (mirrors the parser's incomplete-buffer contract). Pure; never throws.
+ * bytes have even arrived. The incomplete-buffer contract mirrors the parser's. Pure;
+ * never throws.
  *
  * @param buffer - The accumulation buffer to read the next frame's length from
  * @returns The declared payload length, or `undefined` when the buffer is too short to know it yet
@@ -71,14 +71,14 @@ export function measureWebSocketFrame(buffer: Buffer): number | undefined {
 }
 
 /**
- * Checks whether the next frame uses the shortest valid RFC 6455 payload-length encoding.
+ * Checks whether the next frame uses the shortest valid RFC 6455 payload-length
+ * encoding, answering `undefined` until its length prefix is complete.
  *
  * @remarks
- * Returns `undefined` until the complete length prefix is buffered. The 16-bit form
- * is canonical only for lengths at least 126; the 64-bit form only for lengths at
- * least 65,536 and with its most-significant bit clear (RFC 6455 §5.2). Reads the same
- * length prefix as {@link measureWebSocketFrame}, under the same incomplete-buffer
- * contract. Pure; never throws.
+ * The 16-bit form is canonical only for lengths at least 126; the 64-bit form only for
+ * lengths at least 65,536 and with its most-significant bit clear (RFC 6455 §5.2). Reads
+ * the same length prefix as {@link measureWebSocketFrame}, under the same
+ * incomplete-buffer contract. Pure; never throws.
  *
  * @param buffer - The accumulation buffer containing the next frame header
  * @returns Its canonicality, or `undefined` while the length prefix is incomplete
@@ -216,7 +216,8 @@ export function isWebSocketProtocol(protocol: string): boolean {
 }
 
 /**
- * Checks whether a numeric value is a valid RFC 6455 close status code to RECEIVE (§7.4.1).
+ * Checks whether a numeric value is a close status code an RFC 6455 endpoint may
+ * receive (§7.4.1).
  *
  * @remarks
  * True for `1000`–`1003`, `1007`–`1014`, and the application range `3000`–`4999`; false

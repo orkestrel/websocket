@@ -42,8 +42,9 @@ import {
 } from './constants.js'
 
 /**
- * Represents a server-native WebSocket over a raw upgraded `node:stream` Duplex — the lean
- * wrapper around the RFC 6455 wire protocol.
+ * Implements the wrapper contract over a raw upgraded `node:stream` Duplex socket,
+ * driving the RFC 6455 handshake, the frame codec, auto-pong, and the close handshake,
+ * and surfacing every event on an owned `emitter`.
  *
  * @remarks
  * Created by `createNodeWebSocket`. When given a client `key` it runs in SERVER mode —
