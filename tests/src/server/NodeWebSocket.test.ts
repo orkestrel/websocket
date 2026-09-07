@@ -23,7 +23,7 @@ import { captureError, createRecorder, requireValue, waitForDelay } from '@orkes
 import {
 	duplexPair,
 	flushSocket,
-	frame,
+	encodeTestFrame,
 	randomBuffer,
 	readClientFrames,
 } from '../../setupServer.js'
@@ -173,8 +173,8 @@ describe('NodeWebSocket — receiving', () => {
 		})
 		await flushSocket()
 
-		const first = frame(WEBSOCKET_OPCODE_TEXT, 'Hel', { masked: true, fin: false })
-		const second = frame(WEBSOCKET_OPCODE_CONTINUATION, 'lo!', { masked: true })
+		const first = encodeTestFrame(WEBSOCKET_OPCODE_TEXT, 'Hel', { masked: true, fin: false })
+		const second = encodeTestFrame(WEBSOCKET_OPCODE_CONTINUATION, 'lo!', { masked: true })
 		client.write(Buffer.concat([first, second]))
 		await flushSocket()
 
@@ -539,7 +539,7 @@ describe('NodeWebSocket — breach matrix', () => {
 
 		// Start a message (FIN cleared), then send ANOTHER data frame (not a continuation)
 		// before it finishes — RFC 6455 §5.4 forbids interleaving a second data frame.
-		const start = frame(WEBSOCKET_OPCODE_TEXT, 'first', { masked: true, fin: false })
+		const start = encodeTestFrame(WEBSOCKET_OPCODE_TEXT, 'first', { masked: true, fin: false })
 		client.write(start)
 		await flushSocket()
 		client.write(encodeWebSocketFrame(WEBSOCKET_OPCODE_TEXT, 'second', { masked: true }))
@@ -686,7 +686,7 @@ describe('NodeWebSocket — breach matrix', () => {
 		})
 		await flushSocket()
 
-		const first = frame(WEBSOCKET_OPCODE_TEXT, 'ok', { masked: true })
+		const first = encodeTestFrame(WEBSOCKET_OPCODE_TEXT, 'ok', { masked: true })
 		const secondHeader = Buffer.alloc(6)
 		secondHeader.writeUInt8(0x81, 0)
 		secondHeader.writeUInt8(0x80 | 20, 1)
@@ -710,7 +710,7 @@ describe('NodeWebSocket — breach matrix', () => {
 		await flushSocket()
 
 		// Each fragment is within the single-frame cap; the reassembled total (12) is not.
-		const first = frame(WEBSOCKET_OPCODE_TEXT, Buffer.alloc(6, 0x61), {
+		const first = encodeTestFrame(WEBSOCKET_OPCODE_TEXT, Buffer.alloc(6, 0x61), {
 			masked: true,
 			fin: false,
 		})
@@ -1033,7 +1033,7 @@ describe('NodeWebSocket — stream reassembly and lifecycle', () => {
 		})
 		await flushSocket()
 
-		const wire = frame(WEBSOCKET_OPCODE_TEXT, 'byte at a time', { masked: true })
+		const wire = encodeTestFrame(WEBSOCKET_OPCODE_TEXT, 'byte at a time', { masked: true })
 		for (let index = 0; index < wire.length; index += 1) {
 			client.write(wire.subarray(index, index + 1))
 			await flushSocket()
@@ -1045,7 +1045,7 @@ describe('NodeWebSocket — stream reassembly and lifecycle', () => {
 
 	it('reassembles under every two-way chunk split', async () => {
 		const payload = 'every split of this message must still arrive whole'
-		const wire = frame(WEBSOCKET_OPCODE_TEXT, payload, { masked: true })
+		const wire = encodeTestFrame(WEBSOCKET_OPCODE_TEXT, payload, { masked: true })
 		for (let cut = 0; cut <= wire.length; cut += 1) {
 			const [server, client] = duplexPair()
 			const messages: string[] = []
@@ -1078,7 +1078,7 @@ describe('NodeWebSocket — stream reassembly and lifecycle', () => {
 
 		const frames: Buffer[] = []
 		for (let index = 0; index < 20; index += 1) {
-			frames.push(frame(WEBSOCKET_OPCODE_TEXT, `msg-${index}`, { masked: true }))
+			frames.push(encodeTestFrame(WEBSOCKET_OPCODE_TEXT, `msg-${index}`, { masked: true }))
 		}
 		client.write(Buffer.concat(frames))
 		await flushSocket()
@@ -1097,11 +1097,13 @@ describe('NodeWebSocket — stream reassembly and lifecycle', () => {
 		})
 		await flushSocket()
 
-		const frames: Buffer[] = [frame(WEBSOCKET_OPCODE_TEXT, 'a', { masked: true, fin: false })]
+		const frames: Buffer[] = [
+			encodeTestFrame(WEBSOCKET_OPCODE_TEXT, 'a', { masked: true, fin: false }),
+		]
 		for (let index = 0; index < 49; index += 1) {
-			frames.push(frame(WEBSOCKET_OPCODE_CONTINUATION, 'a', { masked: true, fin: false }))
+			frames.push(encodeTestFrame(WEBSOCKET_OPCODE_CONTINUATION, 'a', { masked: true, fin: false }))
 		}
-		frames.push(frame(WEBSOCKET_OPCODE_CONTINUATION, 'a', { masked: true, fin: true }))
+		frames.push(encodeTestFrame(WEBSOCKET_OPCODE_CONTINUATION, 'a', { masked: true, fin: true }))
 		client.write(Buffer.concat(frames))
 		await flushSocket()
 
@@ -1124,9 +1126,12 @@ describe('NodeWebSocket — stream reassembly and lifecycle', () => {
 		})
 		await flushSocket()
 
-		const start = frame(WEBSOCKET_OPCODE_TEXT, 'Hel', { masked: true, fin: false })
-		const ping = frame(WEBSOCKET_OPCODE_PING, Buffer.alloc(4, 0x01), { masked: true, fin: true })
-		const cont = frame(WEBSOCKET_OPCODE_CONTINUATION, 'lo!', { masked: true, fin: true })
+		const start = encodeTestFrame(WEBSOCKET_OPCODE_TEXT, 'Hel', { masked: true, fin: false })
+		const ping = encodeTestFrame(WEBSOCKET_OPCODE_PING, Buffer.alloc(4, 0x01), {
+			masked: true,
+			fin: true,
+		})
+		const cont = encodeTestFrame(WEBSOCKET_OPCODE_CONTINUATION, 'lo!', { masked: true, fin: true })
 		client.write(Buffer.concat([start, ping, cont]))
 		await flushSocket()
 
@@ -1147,8 +1152,11 @@ describe('NodeWebSocket — stream reassembly and lifecycle', () => {
 		})
 		await flushSocket()
 
-		const first = frame(WEBSOCKET_OPCODE_TEXT, Buffer.alloc(60, 0x61), { masked: true, fin: false })
-		const second = frame(WEBSOCKET_OPCODE_CONTINUATION, Buffer.alloc(40, 0x62), {
+		const first = encodeTestFrame(WEBSOCKET_OPCODE_TEXT, Buffer.alloc(60, 0x61), {
+			masked: true,
+			fin: false,
+		})
+		const second = encodeTestFrame(WEBSOCKET_OPCODE_CONTINUATION, Buffer.alloc(40, 0x62), {
 			masked: true,
 			fin: true,
 		})
@@ -1172,8 +1180,11 @@ describe('NodeWebSocket — stream reassembly and lifecycle', () => {
 		})
 		await flushSocket()
 
-		const first = frame(WEBSOCKET_OPCODE_TEXT, Buffer.alloc(60, 0x61), { masked: true, fin: false })
-		const second = frame(WEBSOCKET_OPCODE_CONTINUATION, Buffer.alloc(41, 0x62), {
+		const first = encodeTestFrame(WEBSOCKET_OPCODE_TEXT, Buffer.alloc(60, 0x61), {
+			masked: true,
+			fin: false,
+		})
+		const second = encodeTestFrame(WEBSOCKET_OPCODE_CONTINUATION, Buffer.alloc(41, 0x62), {
 			masked: true,
 			fin: true,
 		})
@@ -1195,7 +1206,7 @@ describe('NodeWebSocket — stream reassembly and lifecycle', () => {
 		})
 		await flushSocket()
 
-		client.write(frame(WEBSOCKET_OPCODE_TEXT, Buffer.alloc(50, 0x61), { masked: true }))
+		client.write(encodeTestFrame(WEBSOCKET_OPCODE_TEXT, Buffer.alloc(50, 0x61), { masked: true }))
 		await flushSocket()
 
 		expect(messages).toHaveLength(1)
@@ -1215,7 +1226,7 @@ describe('NodeWebSocket — stream reassembly and lifecycle', () => {
 		})
 		await flushSocket()
 
-		client.write(frame(WEBSOCKET_OPCODE_TEXT, Buffer.alloc(51, 0x61), { masked: true }))
+		client.write(encodeTestFrame(WEBSOCKET_OPCODE_TEXT, Buffer.alloc(51, 0x61), { masked: true }))
 		await flushSocket()
 
 		expect(closes).toEqual([WEBSOCKET_CLOSE_TOO_BIG])
@@ -1338,7 +1349,9 @@ describe('NodeWebSocket — stream reassembly and lifecycle', () => {
 		// Interleave writes across all four clients before flushing any.
 		for (let round = 0; round < 3; round += 1) {
 			for (const [socketIndex, [, client]] of pairs.entries()) {
-				client.write(frame(WEBSOCKET_OPCODE_TEXT, `s${socketIndex}-r${round}`, { masked: true }))
+				client.write(
+					encodeTestFrame(WEBSOCKET_OPCODE_TEXT, `s${socketIndex}-r${round}`, { masked: true }),
+				)
 			}
 		}
 		await flushSocket()
@@ -1373,11 +1386,11 @@ describe('NodeWebSocket — resource limits', () => {
 		// Hundreds of 1-byte continuation fragments, cumulatively exceeding the 64-byte cap.
 		const rng = seededRandom(3)
 		const frames: Buffer[] = [
-			frame(WEBSOCKET_OPCODE_TEXT, randomBuffer(rng, 1), { masked: true, fin: false }),
+			encodeTestFrame(WEBSOCKET_OPCODE_TEXT, randomBuffer(rng, 1), { masked: true, fin: false }),
 		]
 		for (let index = 0; index < 199; index += 1) {
 			frames.push(
-				frame(WEBSOCKET_OPCODE_CONTINUATION, randomBuffer(rng, 1), {
+				encodeTestFrame(WEBSOCKET_OPCODE_CONTINUATION, randomBuffer(rng, 1), {
 					masked: true,
 					fin: false,
 				}),

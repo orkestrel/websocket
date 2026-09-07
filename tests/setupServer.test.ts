@@ -14,7 +14,7 @@ import {
 	createEchoServer,
 	duplexPair,
 	flushSocket,
-	frame,
+	encodeTestFrame,
 	randomBuffer,
 	readClientFrames,
 } from './setupServer.js'
@@ -96,16 +96,23 @@ describe('frame', () => {
 	it('matches the real encoder when fin is omitted or true', () => {
 		const payload = Buffer.from('hello')
 		const baseline = encodeWebSocketFrame(WEBSOCKET_OPCODE_TEXT, payload, { masked: false })
-		expect(frame(WEBSOCKET_OPCODE_TEXT, payload, { masked: false }).equals(baseline)).toBe(true)
 		expect(
-			frame(WEBSOCKET_OPCODE_TEXT, payload, { masked: false, fin: true }).equals(baseline),
+			encodeTestFrame(WEBSOCKET_OPCODE_TEXT, payload, { masked: false }).equals(baseline),
+		).toBe(true)
+		expect(
+			encodeTestFrame(WEBSOCKET_OPCODE_TEXT, payload, { masked: false, fin: true }).equals(
+				baseline,
+			),
 		).toBe(true)
 	})
 
 	it('clears only the FIN bit of the first byte when fin is false, keeping every other bit', () => {
 		const payload = Buffer.from('fragment')
 		const baseline = encodeWebSocketFrame(WEBSOCKET_OPCODE_BINARY, payload, { masked: false })
-		const unfinished = frame(WEBSOCKET_OPCODE_BINARY, payload, { masked: false, fin: false })
+		const unfinished = encodeTestFrame(WEBSOCKET_OPCODE_BINARY, payload, {
+			masked: false,
+			fin: false,
+		})
 
 		expect(unfinished.readUInt8(0) & 0x80).toBe(0)
 		expect(unfinished.readUInt8(0) & 0x7f).toBe(baseline.readUInt8(0) & 0x7f)

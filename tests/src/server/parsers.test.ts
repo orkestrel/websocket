@@ -13,7 +13,7 @@ import {
 import { seededRandom } from '@orkestrel/contract'
 import { requireValue } from '@orkestrel/test'
 import { buildText } from '../../setup.js'
-import { buildCorpus, frame, randomBuffer } from '../../setupServer.js'
+import { buildCorpus, encodeTestFrame, randomBuffer } from '../../setupServer.js'
 
 // The RFC 6455 coercers as pure units — no socket, real implementations only — asserted
 // against the spec's OWN worked byte vectors so the bit-level mechanics are pinned
@@ -216,12 +216,12 @@ describe('codec properties — incomplete input', () => {
 	it('never throws on every truncation of a valid frame (returns undefined, never a partial)', () => {
 		const rng = seededRandom(3)
 		const wires = [
-			frame(WEBSOCKET_OPCODE_TEXT, randomBuffer(rng, 5)), // 7-bit form, unmasked
-			frame(WEBSOCKET_OPCODE_TEXT, randomBuffer(rng, 5), { masked: true }), // 7-bit form, masked
-			frame(WEBSOCKET_OPCODE_BINARY, randomBuffer(rng, 126)), // 126 + 16-bit form, unmasked
-			frame(WEBSOCKET_OPCODE_BINARY, randomBuffer(rng, 126), { masked: true }), // 126 + 16-bit, masked
-			frame(WEBSOCKET_OPCODE_BINARY, randomBuffer(rng, 65_536)), // 127 + 64-bit form, unmasked
-			frame(WEBSOCKET_OPCODE_BINARY, randomBuffer(rng, 65_536), { masked: true }), // 127 + 64-bit, masked
+			encodeTestFrame(WEBSOCKET_OPCODE_TEXT, randomBuffer(rng, 5)), // 7-bit form, unmasked
+			encodeTestFrame(WEBSOCKET_OPCODE_TEXT, randomBuffer(rng, 5), { masked: true }), // 7-bit form, masked
+			encodeTestFrame(WEBSOCKET_OPCODE_BINARY, randomBuffer(rng, 126)), // 126 + 16-bit form, unmasked
+			encodeTestFrame(WEBSOCKET_OPCODE_BINARY, randomBuffer(rng, 126), { masked: true }), // 126 + 16-bit, masked
+			encodeTestFrame(WEBSOCKET_OPCODE_BINARY, randomBuffer(rng, 65_536)), // 127 + 64-bit form, unmasked
+			encodeTestFrame(WEBSOCKET_OPCODE_BINARY, randomBuffer(rng, 65_536), { masked: true }), // 127 + 64-bit, masked
 		]
 		for (const wire of wires) {
 			// Iterate EVERY truncation offset, but aggregate to a single assertion per

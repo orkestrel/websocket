@@ -59,7 +59,7 @@ export function flushSocket(): Promise<void> {
 	return new Promise((resolve) => setImmediate(() => setImmediate(resolve)))
 }
 
-/** Options for {@link frame}, adding explicit FIN control to the public encoder. */
+/** Options for {@link encodeTestFrame}, adding explicit FIN control to the public encoder. */
 export interface TestFrameOptions {
 	readonly masked?: boolean
 	readonly fin?: boolean
@@ -99,8 +99,8 @@ export function buildCorpus(rng: () => number): readonly Buffer[] {
 	return corpus
 }
 
-/** Encodes one wire message for tests, optionally clearing FIN for fragmentation cases. */
-export function frame(
+/** Encodes one RFC 6455 frame for tests, optionally clearing FIN for fragmentation cases. */
+export function encodeTestFrame(
 	opcode: number,
 	payload: Buffer | string,
 	options?: TestFrameOptions,
