@@ -9,6 +9,8 @@ After an HTTP server hands you an upgraded socket, this wrapper turns that raw b
 
 ## Surface
 
+Take the raw socket an HTTP server hands an `upgrade` listener and pass it to `createNodeWebSocket`, which writes the handshake and echoes every message it receives:
+
 ```ts
 import { createServer } from 'node:http'
 import { createNodeWebSocket } from '@orkestrel/websocket'
@@ -204,6 +206,8 @@ server.on('upgrade', (request, socket, head) => {
 
 ### Stream-decode frames across chunk boundaries
 
+Accumulate incoming bytes into one buffer and loop `parseWebSocketFrame` over it, slicing off each complete frame until an incomplete one remains:
+
 ```ts
 import { parseWebSocketFrame } from '@orkestrel/websocket'
 
@@ -221,6 +225,8 @@ socket.on('data', (chunk: Buffer) => {
 
 ### Encode a frame to the wire (server unmasked, client masked)
 
+Encode the same text payload twice, once as a server frame and once as a masked client frame:
+
 ```ts
 import { encodeWebSocketFrame, WEBSOCKET_OPCODE_TEXT } from '@orkestrel/websocket'
 
@@ -230,6 +236,8 @@ socket.write(encodeWebSocketFrame(WEBSOCKET_OPCODE_TEXT, 'hello', { masked: true
 
 ### Compute the handshake accept token
 
+Compute the `Sec-WebSocket-Accept` value RFC 6455 §1.3 works through as its own example:
+
 ```ts
 import { computeWebSocketAccept } from '@orkestrel/websocket'
 
@@ -237,6 +245,8 @@ computeWebSocketAccept('dGhlIHNhbXBsZSBub25jZQ==') // 's3pPLMBiTxaQ9kYGzzhZRbK+x
 ```
 
 ### Keep a connection alive, and tear it down on demand
+
+Ping the peer on an interval, clear the timer when the connection closes, and destroy the socket immediately on a fatal error:
 
 ```ts
 import { createNodeWebSocket } from '@orkestrel/websocket'
