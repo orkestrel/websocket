@@ -2,33 +2,9 @@
 // this repo's own `guides/README.md` manifest. The constants that follow are this
 // package's own, as is the executed section that closes the file.
 
-import { describe, expect, it } from 'vitest'
-import {
-	computeSymbolKey,
-	createGuide,
-	createSource,
-	createSourceManager,
-	extractFenceImports,
-	findDrift,
-	findMissing,
-	findMissingSymbols,
-	findUnexampled,
-	findUnlisted,
-	isExternalLink,
-	parseManifest,
-	resolveLink,
-} from '@orkestrel/guide'
-import { readFileSync } from 'node:fs'
-import { createRecorder, requireValue } from '@orkestrel/test'
+import { GuideCommand } from '@orkestrel/guide/server'
 import { readInventory } from '@orkestrel/test/server'
-import {
-	computeWebSocketAccept,
-	createNodeWebSocket,
-	encodeWebSocketFrame,
-	WEBSOCKET_OPCODE_CLOSE,
-	WEBSOCKET_OPCODE_TEXT,
-} from '@src/server'
-import { duplexPair, flushSocket, readClientFrames } from './setupServer.js'
+import { createVitest } from 'vitest/node'
 
 /** Every fence language this package's guides are allowed to use. */
 const FENCE_LANGUAGES = Object.freeze(['ts'])
@@ -36,8 +12,10 @@ const FENCE_LANGUAGES = Object.freeze(['ts'])
 const EXAMPLE_LANGUAGE = 'ts'
 /** The one guide this package sources, whose tagline the README pitch equals. */
 const GUIDE_SPEC = 'guides/websocket.md'
+/** The package identity that binds its manifest, module map, and README pitch. */
+const PACKAGE_NAME = '@orkestrel/websocket'
 /** Each import specifier this package's own guides may resolve against. */
-const MODULES = Object.freeze({ '@orkestrel/websocket': 'src/server', '@src/server': 'src/server' })
+const MODULES = Object.freeze({ [PACKAGE_NAME]: 'src/server', '@src/server': 'src/server' })
 /**
  * Declarations deliberately kept out of the barrel, as `computeSymbolKey` strings.
  *
@@ -48,308 +26,219 @@ const MODULES = Object.freeze({ '@orkestrel/websocket': 'src/server', '@src/serv
  */
 const INTERNAL: readonly string[] = Object.freeze([])
 
-/** Root-level files these checks read. `readInventory` walks directories only. */
-const ROOT_FILES = Object.freeze(['AGENTS.md', 'README.md'])
+await new GuideCommand({
+	root: new URL('../', import.meta.url),
+	patterns: ['src/**/*.ts', 'tests/**/*.ts', 'guides/*.md', '*.md', 'package.json'],
+	modules: MODULES,
+	languages: FENCE_LANGUAGES,
+	language: EXAMPLE_LANGUAGE,
+	reader: readInventory,
+	runner: createVitest,
+}).execute(async ({ files, report, rows }) => {
+	const { isRecord, parseJSON } = await import('@orkestrel/contract')
+	const { computeSymbolKey, findMissingSymbols } = await import('@orkestrel/guide')
+	const { createRecorder, requireValue } = await import('@orkestrel/test')
+	const {
+		computeWebSocketAccept,
+		createNodeWebSocket,
+		encodeWebSocketFrame,
+		WEBSOCKET_OPCODE_CLOSE,
+		WEBSOCKET_OPCODE_TEXT,
+	} = await import('@src/server')
+	const { duplexPair, flushSocket, readClientFrames } = await import('./setupServer.js')
+	const { describe, expect, it } = await import('vitest')
+	const manifest = parseJSON(requireValue(files['package.json'], 'Missing inventory: package.json'))
+	if (!isRecord(manifest)) throw new Error('Invalid package manifest: package.json')
 
-const root = new URL('../', import.meta.url)
-const files: Record<string, string> = {
-	...readInventory(root, ['src', 'guides', 'tests'], { extensions: ['.ts', '.md'] }),
-}
-for (const name of ROOT_FILES) files[name] = readFileSync(new URL(name, root), 'utf8')
-const manifest = parseManifest(
-	requireValue(files['guides/README.md'], 'Missing file: guides/README.md'),
-	'guides',
-)
-const sources = createSourceManager({ files, modules: MODULES })
-const own = requireValue(
-	manifest.find((entry) => entry.spec === GUIDE_SPEC),
-	`Missing manifest row: ${GUIDE_SPEC}`,
-)
+	it('manifest lists at least one guide', () => {
+		expect(report.input).toEqual([])
+		expect(rows.length).toBeGreaterThan(0)
+		expect(rows.map((row) => row.entry.spec)).toContain(GUIDE_SPEC)
+	})
 
-it('manifest lists at least one guide', () => {
-	expect(manifest.length).toBeGreaterThan(0)
-})
+	// The example half of the equality case is silent over an empty population: with no
+	// title on both sides `findDrift` compares no pair and the case passes on the summaries
+	// alone. This pins the population this repository's own guide contributes, so removing
+	// every `@example` title reddens the suite instead of quietly retiring half the gate.
+	// The failure names both title sets, because a pin reporting only its own emptiness
+	// leaves the reader to work out which side dropped the title.
+	it('pairs at least one example title across the guide and the source', () => {
+		expect(report.examples.titles.filter((finding) => finding.spec === GUIDE_SPEC)).toEqual([])
+	})
 
-// The example half of the equality case is silent over an empty population: with no
-// title on both sides `findDrift` compares no pair and the case passes on the summaries
-// alone. This pins the population this repository's own guide contributes, so removing
-// every `@example` title reddens the suite instead of quietly retiring half the gate.
-// The failure names both title sets, because a pin reporting only its own emptiness
-// leaves the reader to work out which side dropped the title.
-it('pairs at least one example title across the guide and the source', () => {
-	const guide = createGuide(requireValue(files[GUIDE_SPEC], `Missing file: ${GUIDE_SPEC}`))
-	const source = createSource({ files, module: own.source })
-	const declared = source
-		.examples()
-		.map((example) => example.title)
-		.filter((title) => title !== undefined)
-	const titled = new Set(declared)
-	const headings: string[] = []
-	const paired: string[] = []
-	for (const fence of guide.fences()) {
-		if (fence.title === undefined) continue
-		headings.push(fence.title)
-		if (titled.has(fence.title)) paired.push(fence.title)
+	// The README's pitch and the guide's tagline are one text, each read as the blockquote
+	// under its file's H1. `README.md` is outside the concept index, so the reader is
+	// applied to it directly rather than through a manifest row. Each side is guarded
+	// against `undefined` first, so a file that lost its blockquote reports that rather
+	// than reporting two absences as agreement.
+	it('opens the README with the guide tagline', () => {
+		expect(manifest.name).toBe(PACKAGE_NAME)
+		expect(report.pitch).toEqual([])
+	})
+
+	for (const { entry, guide, source } of rows) {
+		describe(`${entry.concept}`, () => {
+			it('uses only listed fence languages', () => {
+				expect(report.fences.filter((finding) => finding.spec === entry.spec)).toEqual([])
+			})
+
+			it('extracts a non-empty documented surface', () => {
+				expect(guide.surface().length).toBeGreaterThan(0)
+			})
+			it('re-exports every direct declaration that is not named internal', () => {
+				const stranded = findMissingSymbols(source.exports(), source.surface())
+				expect(stranded.filter((key) => !INTERNAL.includes(key))).toEqual([])
+			})
+			it('names no symbol internal that the barrel already exports', () => {
+				const stranded = findMissingSymbols(source.exports(), source.surface())
+				expect(INTERNAL.filter((key) => !stranded.includes(key))).toEqual([])
+			})
+			it('re-exports only direct declarations', () => {
+				expect(findMissingSymbols(source.surface(), source.exports())).toEqual([])
+			})
+			it('documents every barrel export', () => {
+				expect(findMissingSymbols(source.surface(), guide.surface())).toEqual([])
+			})
+			it('documents only barrel exports', () => {
+				expect(findMissingSymbols(guide.surface(), source.surface())).toEqual([])
+			})
+
+			it('exposes no hidden module-scope declarations', () => {
+				expect(source.hidden().map(computeSymbolKey)).toEqual([])
+			})
+
+			it('documents a populated method group', () => {
+				expect(report.sections.filter((finding) => finding.spec === entry.spec)).toEqual([])
+			})
+
+			it('keeps behavioral interfaces and implementing classes in parity', () => {
+				expect(report.methods.filter((finding) => finding.spec === entry.spec)).toEqual([])
+			})
+
+			// The equality gate: a `Summary` cell against its export's description paragraph, a
+			// titled fence against the `@example` of that title. `findDrift` owns the comparison
+			// and names both sides; converge the two sides through the native entry, never by
+			// weakening this assertion. `findDrift` pairs an example only where a title is
+			// present on both sides, so an untitled `@example` block is outside this case. Each
+			// collected line is the spec, the key, and each side's text or `absent` — the same
+			// worklist the native entry prints. Select source authority with `--to guide`, or
+			// guide authority with `--to source`.
+			it('keeps every compared summary and example equal to its source', () => {
+				expect(report.drift.filter((finding) => finding.spec === entry.spec)).toEqual([])
+			})
+
+			it('documents an example for every Surface function', () => {
+				expect(report.examples.functions.filter((finding) => finding.spec === entry.spec)).toEqual(
+					[],
+				)
+			})
+
+			it('documents an example for every method', () => {
+				expect(report.examples.methods.filter((finding) => finding.spec === entry.spec)).toEqual([])
+			})
+
+			it('imports only real exports in every ```ts fence', () => {
+				expect(report.imports.filter((finding) => finding.spec === entry.spec)).toEqual([])
+			})
+
+			it('resolves every relative link', () => {
+				expect(report.links.filter((finding) => finding.spec === entry.spec)).toEqual([])
+			})
+			it('links only to test files that exist', () => {
+				expect(report.tests.filter((finding) => finding.spec === entry.spec)).toEqual([])
+			})
+		})
 	}
-	const unpaired =
-		paired.length > 0
-			? []
-			: [
-					`${GUIDE_SPEC} pairs: guide ${JSON.stringify(headings)} source ${JSON.stringify(declared)}`,
-				]
-	expect(unpaired).toEqual([])
-})
 
-// The README's pitch and the guide's tagline are one text, each read as the blockquote
-// under its file's H1. `README.md` is outside the concept index, so the reader is
-// applied to it directly rather than through a manifest row. Each side is guarded
-// against `undefined` first, so a file that lost its blockquote reports that rather
-// than reporting two absences as agreement.
-it('opens the README with the guide tagline', () => {
-	const pitch = createGuide(requireValue(files['README.md'], 'Missing file: README.md')).tagline()
-	const tagline = createGuide(
-		requireValue(files[GUIDE_SPEC], `Missing file: ${GUIDE_SPEC}`),
-	).tagline()
+	// The flagship fences of `guides/websocket.md`, transcribed and asserted on the values
+	// their comments claim. Name resolution is not a behavioural proof, so a fence documenting
+	// a value the code contradicts satisfies every parity assertion in this file; only an
+	// executed transcription breaks on it. The `## Surface` and `## Patterns` fences take an
+	// upgraded socket from a live `node:http` server, so they run here over the in-memory
+	// Duplex pair `tests/setupServer.ts` builds, which is the same real bidirectional socket
+	// without the listener. Change a fence, change the transcription beside it.
 
-	expect(pitch).not.toBeUndefined()
-	expect(tagline).not.toBeUndefined()
-	expect(pitch).toBe(tagline)
-})
+	// The canonical `Sec-WebSocket-Key` of RFC 6455 §1.3, standing in for the request header
+	// each server-mode fence reads.
+	const FENCE_KEY = 'dGhlIHNhbXBsZSBub25jZQ=='
 
-for (const entry of manifest) {
-	const guide = createGuide(requireValue(files[entry.spec], `Missing file: ${entry.spec}`))
-	const source = createSource({ files, module: entry.source })
-
-	describe(`${entry.concept}`, () => {
-		it('uses only listed fence languages', () => {
-			expect(findUnlisted(guide.fences(), FENCE_LANGUAGES)).toEqual([])
-		})
-
-		it('extracts a non-empty documented surface', () => {
-			expect(guide.surface().length).toBeGreaterThan(0)
-		})
-		it('re-exports every direct declaration that is not named internal', () => {
-			const stranded = findMissingSymbols(source.exports(), source.surface())
-			expect(stranded.filter((key) => !INTERNAL.includes(key))).toEqual([])
-		})
-		it('names no symbol internal that the barrel already exports', () => {
-			const stranded = findMissingSymbols(source.exports(), source.surface())
-			expect(INTERNAL.filter((key) => !stranded.includes(key))).toEqual([])
-		})
-		it('re-exports only direct declarations', () => {
-			expect(findMissingSymbols(source.surface(), source.exports())).toEqual([])
-		})
-		it('documents every barrel export', () => {
-			expect(findMissingSymbols(source.surface(), guide.surface())).toEqual([])
-		})
-		it('documents only barrel exports', () => {
-			expect(findMissingSymbols(guide.surface(), source.surface())).toEqual([])
-		})
-
-		it('exposes no hidden module-scope declarations', () => {
-			expect(source.hidden().map(computeSymbolKey)).toEqual([])
-		})
-
-		for (const group of guide.methods()) {
-			const members = source.methods(group.interface).map((method) => method.name)
-			const documented = group.methods.map((method) => method.name)
-			const entity = group.interface.replace(/Interface$/, '')
-			describe(`${group.interface}`, () => {
-				it('documents at least one method', () => {
-					expect(group.methods.length).toBeGreaterThan(0)
-				})
-				it('documents every interface method', () => {
-					expect(findMissing(members, documented)).toEqual([])
-				})
-				it('documents no phantom method', () => {
-					expect(findMissing(documented, members)).toEqual([])
-				})
-				it(`${entity} exposes no undocumented method`, () => {
-					const extra =
-						entity === group.interface
-							? []
-							: findMissing(
-									source.methods(entity).map((method) => method.name),
-									documented,
-								)
-					expect(extra).toEqual([])
-				})
-			})
-		}
-
-		// The equality gate: a `Summary` cell against its export's description paragraph, a
-		// titled fence against the `@example` of that title. `findDrift` owns the comparison
-		// and names both sides; converge the two sides with `npm run docs`, never by
-		// weakening this assertion. `findDrift` pairs an example only where a title is
-		// present on both sides, so an untitled `@example` block is outside this case. Each
-		// collected line is the spec, the key, and each side's text or `absent` — the same
-		// worklist `npm run docs` prints, so a failure here is read the way that command's
-		// output is.
-		it('keeps every compared summary and example equal to its source', () => {
-			const disagreeing: string[] = []
-			for (const drift of findDrift(guide, source)) {
-				const left = drift.guide === undefined ? 'absent' : JSON.stringify(drift.guide)
-				const right = drift.source === undefined ? 'absent' : JSON.stringify(drift.source)
-				disagreeing.push(`${entry.spec} ${drift.key}: guide ${left} source ${right}`)
+	describe('flagship fences', () => {
+		it('the Surface fence echoes a client text frame back as `echo: <text>`', async () => {
+			const [server, client] = duplexPair()
+			const collector = readClientFrames(client)
+			const headers: Record<string, string | readonly string[] | undefined> = {
+				'sec-websocket-key': FENCE_KEY,
 			}
-			expect(disagreeing).toEqual([])
-		})
 
-		it('documents an example for every Surface function', () => {
-			const fences = guide
-				.fences()
-				.filter((fence) => fence.language === EXAMPLE_LANGUAGE)
-				.map((fence) => fence.code)
-			const names = guide
-				.surface()
-				.filter((symbol) => symbol.keyword === 'function')
-				.map((symbol) => symbol.name)
-			expect(
-				findUnexampled(
-					names,
-					fences,
-					source.examples().map((example) => example.name),
-				),
-			).toEqual([])
-		})
-
-		for (const group of guide.methods()) {
-			const entity = group.interface.replace(/Interface$/, '')
-			const documented = group.methods.map((method) => method.name)
-			const examples =
-				entity === group.interface
-					? source.examples(group.interface).map((example) => example.name)
-					: source
-							.examples(group.interface)
-							.map((example) => example.name)
-							.concat(source.examples(entity).map((example) => example.name))
-			describe(`${group.interface} examples`, () => {
-				it('documents an example for every method', () => {
-					const fences = guide
-						.fences()
-						.filter((fence) => fence.language === EXAMPLE_LANGUAGE)
-						.map((fence) => fence.code)
-					expect(findUnexampled(documented, fences, examples)).toEqual([])
-				})
+			const key = headers['sec-websocket-key']
+			if (typeof key !== 'string') throw new Error('the fence narrows the header to a string key')
+			const ws = createNodeWebSocket({
+				socket: server,
+				key, // present => server mode + 101 handshake
+				on: { message: (text) => ws.send(`echo: ${text}`) },
 			})
-		}
+			const closes: Array<number | undefined> = []
+			ws.emitter.on('close', (code) => closes.push(code))
+			await flushSocket()
 
-		it('imports only real exports in every ```ts fence', () => {
-			const fences = guide.fences().filter((fence) => fence.language === EXAMPLE_LANGUAGE)
-			for (const fence of fences) {
-				for (const { specifier, names } of extractFenceImports(fence.code)) {
-					const imported = sources.source(specifier)
-					if (imported === undefined) continue
-					const surface = imported.surface().map((symbol) => symbol.name)
-					expect(findMissing(names, surface)).toEqual([])
-				}
-			}
+			client.write(encodeWebSocketFrame(WEBSOCKET_OPCODE_TEXT, 'hello', { masked: true }))
+			await flushSocket()
+
+			expect(collector.frames.map((frame) => frame.payload.toString('utf-8'))).toEqual([
+				'echo: hello',
+			])
+
+			// The fence's `close` listener: the peer's close frame is echoed, the socket ends,
+			// and the final `close` carries the peer's code.
+			const closePayload = Buffer.alloc(2)
+			closePayload.writeUInt16BE(1000, 0)
+			client.write(encodeWebSocketFrame(WEBSOCKET_OPCODE_CLOSE, closePayload, { masked: true }))
+			await flushSocket()
+			expect(closes).toEqual([1000])
 		})
 
-		it('resolves every relative link', () => {
-			const broken = guide
-				.links()
-				.filter((href) => !isExternalLink(href))
-				.map((href) => resolveLink(entry.spec, href))
-				.filter((path) => !source.exists(path))
-			expect(broken).toEqual([])
+		it('the Patterns fence echoes from its construction hook and hands the same message to a second observer', async () => {
+			const [server, client] = duplexPair()
+			const collector = readClientFrames(client)
+			const observed = createRecorder<readonly [message: string]>()
+
+			const ws = createNodeWebSocket({
+				socket: server,
+				key: FENCE_KEY,
+				on: { message: (text) => ws.send(`echo: ${text}`) }, // wired before the first frame arrives
+			})
+			ws.emitter.on('message', observed.handler) // a second observer of the same event
+			await flushSocket()
+
+			client.write(encodeWebSocketFrame(WEBSOCKET_OPCODE_TEXT, 'pattern', { masked: true }))
+			await flushSocket()
+
+			// One echo, not two: the fence's later listener observes the message and the
+			// construction hook is what answers it.
+			expect(collector.frames.map((frame) => frame.payload.toString('utf-8'))).toEqual([
+				'echo: pattern',
+			])
+			expect(observed.calls).toEqual([['pattern']])
+			ws.destroy()
 		})
-		it('links only to test files that exist', () => {
-			const missing = guide
-				.tests()
-				.map((href) => resolveLink(entry.spec, href))
-				.filter((path) => !source.exists(path))
-			expect(missing).toEqual([])
+
+		it('the encoder fence writes a server frame unmasked and a client frame masked', () => {
+			const unmasked = encodeWebSocketFrame(WEBSOCKET_OPCODE_TEXT, 'hello')
+			const masked = encodeWebSocketFrame(WEBSOCKET_OPCODE_TEXT, 'hello', { masked: true })
+
+			// server→client: FIN + text opcode, the 7-bit length form, and the mask bit clear.
+			expect([...unmasked]).toEqual([0x81, 0x05, 0x68, 0x65, 0x6c, 0x6c, 0x6f])
+			expect(unmasked.readUInt8(1) & 0x80).toBe(0)
+			// client→server: the same header with the mask bit set, so the bytes differ.
+			expect(masked.readUInt8(0)).toBe(0x81)
+			expect(masked.readUInt8(1) & 0x80).toBe(0x80)
+			expect(masked.equals(unmasked)).toBe(false)
 		})
-	})
-}
 
-// The flagship fences of `guides/websocket.md`, transcribed and asserted on the values
-// their comments claim. Name resolution is not a behavioural proof, so a fence documenting
-// a value the code contradicts satisfies every parity assertion in this file; only an
-// executed transcription breaks on it. The `## Surface` and `## Patterns` fences take an
-// upgraded socket from a live `node:http` server, so they run here over the in-memory
-// Duplex pair `tests/setupServer.ts` builds, which is the same real bidirectional socket
-// without the listener. Change a fence, change the transcription beside it.
-
-// The canonical `Sec-WebSocket-Key` of RFC 6455 §1.3, standing in for the request header
-// each server-mode fence reads.
-const FENCE_KEY = 'dGhlIHNhbXBsZSBub25jZQ=='
-
-describe('flagship fences', () => {
-	it('the Surface fence echoes a client text frame back as `echo: <text>`', async () => {
-		const [server, client] = duplexPair()
-		const collector = readClientFrames(client)
-		const headers: Record<string, string | readonly string[] | undefined> = {
-			'sec-websocket-key': FENCE_KEY,
-		}
-
-		const key = headers['sec-websocket-key']
-		if (typeof key !== 'string') throw new Error('the fence narrows the header to a string key')
-		const ws = createNodeWebSocket({
-			socket: server,
-			key, // present => server mode + 101 handshake
-			on: { message: (text) => ws.send(`echo: ${text}`) },
+		it('the accept-token fence returns the RFC 6455 §1.3 worked example', () => {
+			expect(computeWebSocketAccept('dGhlIHNhbXBsZSBub25jZQ==')).toBe(
+				's3pPLMBiTxaQ9kYGzzhZRbK+xOo=',
+			)
 		})
-		const closes: Array<number | undefined> = []
-		ws.emitter.on('close', (code) => closes.push(code))
-		await flushSocket()
-
-		client.write(encodeWebSocketFrame(WEBSOCKET_OPCODE_TEXT, 'hello', { masked: true }))
-		await flushSocket()
-
-		expect(collector.frames.map((frame) => frame.payload.toString('utf-8'))).toEqual([
-			'echo: hello',
-		])
-
-		// The fence's `close` listener: the peer's close frame is echoed, the socket ends,
-		// and the final `close` carries the peer's code.
-		const closePayload = Buffer.alloc(2)
-		closePayload.writeUInt16BE(1000, 0)
-		client.write(encodeWebSocketFrame(WEBSOCKET_OPCODE_CLOSE, closePayload, { masked: true }))
-		await flushSocket()
-		expect(closes).toEqual([1000])
-	})
-
-	it('the Patterns fence echoes from its construction hook and hands the same message to a second observer', async () => {
-		const [server, client] = duplexPair()
-		const collector = readClientFrames(client)
-		const observed = createRecorder<readonly [message: string]>()
-
-		const ws = createNodeWebSocket({
-			socket: server,
-			key: FENCE_KEY,
-			on: { message: (text) => ws.send(`echo: ${text}`) }, // wired before the first frame arrives
-		})
-		ws.emitter.on('message', observed.handler) // a second observer of the same event
-		await flushSocket()
-
-		client.write(encodeWebSocketFrame(WEBSOCKET_OPCODE_TEXT, 'pattern', { masked: true }))
-		await flushSocket()
-
-		// One echo, not two: the fence's later listener observes the message and the
-		// construction hook is what answers it.
-		expect(collector.frames.map((frame) => frame.payload.toString('utf-8'))).toEqual([
-			'echo: pattern',
-		])
-		expect(observed.calls).toEqual([['pattern']])
-		ws.destroy()
-	})
-
-	it('the encoder fence writes a server frame unmasked and a client frame masked', () => {
-		const unmasked = encodeWebSocketFrame(WEBSOCKET_OPCODE_TEXT, 'hello')
-		const masked = encodeWebSocketFrame(WEBSOCKET_OPCODE_TEXT, 'hello', { masked: true })
-
-		// server→client: FIN + text opcode, the 7-bit length form, and the mask bit clear.
-		expect([...unmasked]).toEqual([0x81, 0x05, 0x68, 0x65, 0x6c, 0x6c, 0x6f])
-		expect(unmasked.readUInt8(1) & 0x80).toBe(0)
-		// client→server: the same header with the mask bit set, so the bytes differ.
-		expect(masked.readUInt8(0)).toBe(0x81)
-		expect(masked.readUInt8(1) & 0x80).toBe(0x80)
-		expect(masked.equals(unmasked)).toBe(false)
-	})
-
-	it('the accept-token fence returns the RFC 6455 §1.3 worked example', () => {
-		expect(computeWebSocketAccept('dGhlIHNhbXBsZSBub25jZQ==')).toBe('s3pPLMBiTxaQ9kYGzzhZRbK+xOo=')
 	})
 })
