@@ -6,6 +6,7 @@ import type {
 	WebSocketReadyState,
 } from './types.js'
 import type { EmitterInterface } from '@orkestrel/emitter'
+import { isNumber, isString } from '@orkestrel/contract'
 import { Emitter } from '@orkestrel/emitter'
 import {
 	computeWebSocketAccept,
@@ -111,13 +112,13 @@ export class NodeWebSocket implements NodeWebSocketInterface {
 	 */
 	constructor(options: NodeWebSocketOptions) {
 		const payload = options.payload ?? WEBSOCKET_MAX_PAYLOAD
-		if (!Number.isSafeInteger(payload) || payload < 0) {
+		if (!isNumber(payload) || !Number.isSafeInteger(payload) || payload < 0) {
 			throw new WebSocketError('OPTION', 'payload must be a non-negative safe integer', {
 				payload,
 			})
 		}
 		const timeout = options.timeout ?? WEBSOCKET_CLOSE_TIMEOUT_MS
-		if (!Number.isSafeInteger(timeout) || timeout < 0) {
+		if (!isNumber(timeout) || !Number.isSafeInteger(timeout) || timeout < 0) {
 			throw new WebSocketError('OPTION', 'timeout must be a non-negative safe integer', {
 				timeout,
 			})
@@ -528,7 +529,7 @@ export class NodeWebSocket implements NodeWebSocketInterface {
 	// chunk (a string from a mis-encoded socket) is normalized; anything else is dropped.
 	#bytes(chunk: unknown): Buffer | undefined {
 		if (Buffer.isBuffer(chunk)) return chunk
-		if (typeof chunk === 'string') return Buffer.from(chunk, 'utf-8')
+		if (isString(chunk)) return Buffer.from(chunk, 'utf-8')
 		return undefined
 	}
 }

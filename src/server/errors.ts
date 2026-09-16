@@ -1,4 +1,5 @@
 import type { WebSocketErrorCode } from './types.js'
+import { isInstance } from '@orkestrel/contract'
 
 // Errors for the WebSocket wrapper. A single `WebSocketError` carries a
 // machine-readable `code` naming the subject that was refused, so a `catch` branches
@@ -75,5 +76,5 @@ export class WebSocketError extends Error {
  * ```
  */
 export function isWebSocketError(value: unknown): value is WebSocketError {
-	return value instanceof WebSocketError
+	return isInstance(value, WebSocketError)
 }

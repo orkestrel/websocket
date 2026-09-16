@@ -1,4 +1,5 @@
 import type { WebSocketEncodeOptions } from './types.js'
+import { isInteger, isString } from '@orkestrel/contract'
 import { createHash, randomBytes } from 'node:crypto'
 import { WEBSOCKET_GUID } from './constants.js'
 import { WebSocketError } from './errors.js'
@@ -129,7 +130,7 @@ export function encodeWebSocketFrame(
 	payload: Buffer | string,
 	options?: WebSocketEncodeOptions,
 ): Buffer {
-	if (!Number.isInteger(opcode) || opcode < 0 || opcode > 0x0f) {
+	if (!isInteger(opcode) || opcode < 0 || opcode > 0x0f) {
 		throw new WebSocketError('FRAME', 'opcode must be an integer between 0 and 15', { opcode })
 	}
 	if (options?.mask !== undefined && options.mask.length !== 4) {
@@ -140,7 +141,7 @@ export function encodeWebSocketFrame(
 	if (options?.mask !== undefined && options.masked !== true) {
 		throw new WebSocketError('FRAME', 'mask requires masked: true')
 	}
-	const body = typeof payload === 'string' ? Buffer.from(payload, 'utf-8') : payload
+	const body = isString(payload) ? Buffer.from(payload, 'utf-8') : payload
 	const length = body.length
 	const masked = options?.masked === true
 	const mask = masked ? (options?.mask ?? randomBytes(4)) : undefined
@@ -238,7 +239,7 @@ export function isWebSocketProtocol(protocol: string): boolean {
  * ```
  */
 export function isCloseCode(code: number): boolean {
-	if (!Number.isInteger(code)) return false
+	if (!isInteger(code)) return false
 	if (code >= 1000 && code <= 1003) return true
 	if (code >= 1007 && code <= 1014) return true
 	if (code >= 3000 && code <= 4999) return true
