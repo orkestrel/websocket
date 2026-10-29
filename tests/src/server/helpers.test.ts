@@ -220,7 +220,7 @@ describe('isCloseCode', () => {
 
 describe('codec properties — close-code classification', () => {
 	it('classifies every code 999..5000 exactly per RFC 6455 §7.4.1 + the 1012-1014 extension', () => {
-		for (let code = 999; code <= 5000; code += 1) {
+		for (const code of Array.from({ length: 4002 }, (_, index) => index + 999)) {
 			const expected =
 				(code >= 1000 && code <= 1003) ||
 				(code >= 1007 && code <= 1014) ||

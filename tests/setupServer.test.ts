@@ -8,7 +8,7 @@
 import { describe, expect, it } from 'vitest'
 import { encodeWebSocketFrame, WEBSOCKET_OPCODE_BINARY, WEBSOCKET_OPCODE_TEXT } from '@src/server'
 import { seededRandom } from '@orkestrel/contract'
-import { requireValue } from '@orkestrel/test'
+import { createRecorder, requireValue } from '@orkestrel/test'
 import {
 	buildCorpus,
 	createEchoServer,
@@ -23,6 +23,7 @@ import {
 	INTEGRATION_COUNT_PREFIX,
 	INTEGRATION_COUNT_REQUEST,
 	nextMessage,
+	TestSequence,
 } from './setup.js'
 
 describe('duplexPair', () => {
@@ -44,35 +45,31 @@ describe('duplexPair', () => {
 
 describe('flushSocket', () => {
 	it('resolves only after two elapsed setImmediate ticks, not synchronously', async () => {
-		let firstTickRan = false
-		let secondTickRan = false
+		const firstTick = createRecorder<[]>()
+		const secondTick = createRecorder<[]>()
 		setImmediate(() => {
-			firstTickRan = true
+			firstTick.handler()
 			setImmediate(() => {
-				secondTickRan = true
+				secondTick.handler()
 			})
 		})
 
 		const pending = flushSocket()
-		expect(firstTickRan).toBe(false)
-		expect(secondTickRan).toBe(false)
+		expect(firstTick.count > 0).toBe(false)
+		expect(secondTick.count > 0).toBe(false)
 
 		await pending
-		expect(firstTickRan).toBe(true)
-		expect(secondTickRan).toBe(true)
+		expect(firstTick.count > 0).toBe(true)
+		expect(secondTick.count > 0).toBe(true)
 	})
 })
 
 describe('randomBuffer', () => {
 	it('returns `length` bytes, each an integer in 0..255, deterministic for a repeated rng', () => {
-		let calls = 0
-		const rng = (): number => {
-			calls += 1
-			return (calls % 251) / 251
-		}
-		const first = randomBuffer(rng, 16)
-		calls = 0
-		const second = randomBuffer(rng, 16)
+		const firstSequence = new TestSequence(251)
+		const secondSequence = new TestSequence(251)
+		const first = randomBuffer(() => firstSequence.next(), 16)
+		const second = randomBuffer(() => secondSequence.next(), 16)
 		expect(first.length).toBe(16)
 		expect(first.equals(second)).toBe(true)
 		for (const byte of first) {

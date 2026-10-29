@@ -75,14 +75,14 @@ describe('NodeWebSocket — handshake', () => {
 
 	it('emits open on construction', async () => {
 		const [server] = duplexPair()
-		let opened = false
+		const opened = createRecorder<[]>()
 		const ws = createNodeWebSocket({
 			socket: server,
 			key: CLIENT_KEY,
-			on: { open: () => (opened = true) },
+			on: { open: opened.handler },
 		})
 		await flushSocket()
-		expect(opened).toBe(true)
+		expect(opened.count > 0).toBe(true)
 		ws.destroy()
 	})
 })
@@ -235,29 +235,29 @@ describe('NodeWebSocket — ping / pong', () => {
 	it('auto-answers a client ping with a pong and emits ping', async () => {
 		const [server, client] = duplexPair()
 		const { frames } = readClientFrames(client)
-		let pinged = false
+		const pinged = createRecorder<[]>()
 		const ws = createNodeWebSocket({
 			socket: server,
 			key: CLIENT_KEY,
-			on: { ping: () => (pinged = true) },
+			on: { ping: pinged.handler },
 		})
 		await flushSocket()
 
 		client.write(encodeWebSocketFrame(WEBSOCKET_OPCODE_PING, Buffer.alloc(0), { masked: true }))
 		await flushSocket()
 
-		expect(pinged).toBe(true)
+		expect(pinged.count > 0).toBe(true)
 		expect(frames.some((entry) => entry.opcode === WEBSOCKET_OPCODE_PONG)).toBe(true)
 		ws.destroy()
 	})
 
 	it('emits pong when the client answers a server ping', async () => {
 		const [server, client] = duplexPair()
-		let ponged = false
+		const ponged = createRecorder<[]>()
 		const ws = createNodeWebSocket({
 			socket: server,
 			key: CLIENT_KEY,
-			on: { pong: () => (ponged = true) },
+			on: { pong: ponged.handler },
 		})
 		await flushSocket()
 
@@ -266,7 +266,7 @@ describe('NodeWebSocket — ping / pong', () => {
 		client.write(encodeWebSocketFrame(WEBSOCKET_OPCODE_PONG, Buffer.alloc(0), { masked: true }))
 		await flushSocket()
 
-		expect(ponged).toBe(true)
+		expect(ponged.count > 0).toBe(true)
 		ws.destroy()
 	})
 })
@@ -837,14 +837,14 @@ describe('NodeWebSocket — AbortSignal lifecycle', () => {
 
 	it('a long-lived signal never accumulates abort listeners across closed sockets', async () => {
 		const controller = new AbortController()
-		for (let index = 0; index < 5; index += 1) {
+		for (const [index] of Array.from({ length: 5 }).entries()) {
 			const [server] = duplexPair()
 			const ws = createNodeWebSocket({ socket: server, key: CLIENT_KEY, signal: controller.signal })
 			await flushSocket()
 			ws.destroy()
 			// Each `destroy()` removes its own `abort` listener from the shared signal — the
 			// listener count never grows across five closed sockets.
-			expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0)
+			expect(getEventListeners(controller.signal, 'abort'), `socket ${index}`).toHaveLength(0)
 		}
 		expect(controller.signal.aborted).toBe(false)
 	})
@@ -1034,7 +1034,7 @@ describe('NodeWebSocket — stream reassembly and lifecycle', () => {
 		await flushSocket()
 
 		const wire = encodeTestFrame(WEBSOCKET_OPCODE_TEXT, 'byte at a time', { masked: true })
-		for (let index = 0; index < wire.length; index += 1) {
+		for (const [index] of wire.entries()) {
 			client.write(wire.subarray(index, index + 1))
 			await flushSocket()
 		}
@@ -1046,7 +1046,7 @@ describe('NodeWebSocket — stream reassembly and lifecycle', () => {
 	it('reassembles under every two-way chunk split', async () => {
 		const payload = 'every split of this message must still arrive whole'
 		const wire = encodeTestFrame(WEBSOCKET_OPCODE_TEXT, payload, { masked: true })
-		for (let cut = 0; cut <= wire.length; cut += 1) {
+		for (const [cut] of Array.from({ length: wire.length + 1 }).entries()) {
 			const [server, client] = duplexPair()
 			const messages: string[] = []
 			const ws = createNodeWebSocket({
@@ -1076,10 +1076,9 @@ describe('NodeWebSocket — stream reassembly and lifecycle', () => {
 		})
 		await flushSocket()
 
-		const frames: Buffer[] = []
-		for (let index = 0; index < 20; index += 1) {
-			frames.push(encodeTestFrame(WEBSOCKET_OPCODE_TEXT, `msg-${index}`, { masked: true }))
-		}
+		const frames = Array.from({ length: 20 }, (_, index) =>
+			encodeTestFrame(WEBSOCKET_OPCODE_TEXT, `msg-${index}`, { masked: true }),
+		)
 		client.write(Buffer.concat(frames))
 		await flushSocket()
 
@@ -1099,11 +1098,11 @@ describe('NodeWebSocket — stream reassembly and lifecycle', () => {
 
 		const frames: Buffer[] = [
 			encodeTestFrame(WEBSOCKET_OPCODE_TEXT, 'a', { masked: true, fin: false }),
+			...Array.from({ length: 49 }, () =>
+				encodeTestFrame(WEBSOCKET_OPCODE_CONTINUATION, 'a', { masked: true, fin: false }),
+			),
+			encodeTestFrame(WEBSOCKET_OPCODE_CONTINUATION, 'a', { masked: true, fin: true }),
 		]
-		for (let index = 0; index < 49; index += 1) {
-			frames.push(encodeTestFrame(WEBSOCKET_OPCODE_CONTINUATION, 'a', { masked: true, fin: false }))
-		}
-		frames.push(encodeTestFrame(WEBSOCKET_OPCODE_CONTINUATION, 'a', { masked: true, fin: true }))
 		client.write(Buffer.concat(frames))
 		await flushSocket()
 
@@ -1115,13 +1114,13 @@ describe('NodeWebSocket — stream reassembly and lifecycle', () => {
 		const [server, client] = duplexPair()
 		const { frames: outbound } = readClientFrames(client)
 		const messages: string[] = []
-		let pinged = false
+		const pinged = createRecorder<[]>()
 		const ws = createNodeWebSocket({
 			socket: server,
 			key: CLIENT_KEY,
 			on: {
 				message: (text) => messages.push(text),
-				ping: () => (pinged = true),
+				ping: pinged.handler,
 			},
 		})
 		await flushSocket()
@@ -1135,7 +1134,7 @@ describe('NodeWebSocket — stream reassembly and lifecycle', () => {
 		client.write(Buffer.concat([start, ping, cont]))
 		await flushSocket()
 
-		expect(pinged).toBe(true)
+		expect(pinged.count > 0).toBe(true)
 		expect(outbound.some((f) => f.opcode === WEBSOCKET_OPCODE_PONG)).toBe(true)
 		expect(messages).toEqual(['Hello!'])
 		ws.destroy()
@@ -1320,13 +1319,13 @@ describe('NodeWebSocket — stream reassembly and lifecycle', () => {
 
 	it('leaks no listeners across 100 construct→destroy churns on a shared signal', async () => {
 		const controller = new AbortController()
-		for (let index = 0; index < 100; index += 1) {
+		for (const [index] of Array.from({ length: 100 }).entries()) {
 			const [server] = duplexPair()
 			const ws = createNodeWebSocket({ socket: server, key: CLIENT_KEY, signal: controller.signal })
 			await flushSocket()
 			ws.destroy()
 
-			expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0)
+			expect(getEventListeners(controller.signal, 'abort'), `socket ${index}`).toHaveLength(0)
 			expect(getEventListeners(server, 'data')).toHaveLength(0)
 			expect(getEventListeners(server, 'close')).toHaveLength(0)
 			expect(getEventListeners(server, 'error')).toHaveLength(1)
@@ -1347,7 +1346,7 @@ describe('NodeWebSocket — stream reassembly and lifecycle', () => {
 		await flushSocket()
 
 		// Interleave writes across all four clients before flushing any.
-		for (let round = 0; round < 3; round += 1) {
+		for (const [round] of Array.from({ length: 3 }).entries()) {
 			for (const [socketIndex, [, client]] of pairs.entries()) {
 				client.write(
 					encodeTestFrame(WEBSOCKET_OPCODE_TEXT, `s${socketIndex}-r${round}`, { masked: true }),
@@ -1356,7 +1355,7 @@ describe('NodeWebSocket — stream reassembly and lifecycle', () => {
 		}
 		await flushSocket()
 
-		for (let socketIndex = 0; socketIndex < 4; socketIndex += 1) {
+		for (const [socketIndex] of pairs.entries()) {
 			expect(messages[socketIndex]).toEqual([
 				`s${socketIndex}-r0`,
 				`s${socketIndex}-r1`,
@@ -1387,15 +1386,13 @@ describe('NodeWebSocket — resource limits', () => {
 		const rng = seededRandom(3)
 		const frames: Buffer[] = [
 			encodeTestFrame(WEBSOCKET_OPCODE_TEXT, randomBuffer(rng, 1), { masked: true, fin: false }),
-		]
-		for (let index = 0; index < 199; index += 1) {
-			frames.push(
+			...Array.from({ length: 199 }, () =>
 				encodeTestFrame(WEBSOCKET_OPCODE_CONTINUATION, randomBuffer(rng, 1), {
 					masked: true,
 					fin: false,
 				}),
-			)
-		}
+			),
+		]
 		client.write(Buffer.concat(frames))
 		await flushSocket()
 

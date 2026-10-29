@@ -55,17 +55,17 @@ export function measureWebSocketFrame(buffer: Buffer): number | undefined {
 	if (buffer.length < 2) return undefined
 
 	const secondByte = buffer.readUInt8(1)
-	let length = secondByte & 0x7f
+	const length = secondByte & 0x7f
 	const offset = 2
 
 	if (length === 126) {
 		if (buffer.length < offset + 2) return undefined
-		length = buffer.readUInt16BE(offset)
+		return buffer.readUInt16BE(offset)
 	} else if (length === 127) {
 		if (buffer.length < offset + 8) return undefined
 		const high = buffer.readUInt32BE(offset)
 		const low = buffer.readUInt32BE(offset + 4)
-		length = high * 0x1_0000_0000 + low
+		return high * 0x1_0000_0000 + low
 	}
 
 	return length
@@ -168,7 +168,7 @@ export function encodeWebSocketFrame(
 
 	mask.copy(header, header.length - 4)
 	const maskedBody = Buffer.alloc(length)
-	for (let index = 0; index < length; index += 1) {
+	for (const [index] of maskedBody.entries()) {
 		maskedBody[index] = body.readUInt8(index) ^ mask.readUInt8(index % 4)
 	}
 	return Buffer.concat([header, maskedBody])

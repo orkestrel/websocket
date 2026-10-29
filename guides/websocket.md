@@ -147,6 +147,8 @@ These invariants hold across `src/server` ↔ `websocket.md`:
 
 `WebSocketError` is the one failure type, carrying a stable machine-readable `code`. Narrow a caught value with `isWebSocketError`, then branch on `code`.
 
+The guard accepts branded errors from another installed copy and subclasses, regardless of `name`. It requires a global `Error` instance with a derived prototype, an own self-identity brand, a declared code, and an optional object context. It refuses unbranded look-alikes, transparent proxies, and a plain object carrying only the brand.
+
 | Code     | Raised when                                                                                                                                                                           |
 | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `OPTION` | `createNodeWebSocket` refused a `NodeWebSocketOptions` member: `payload`, `timeout`, `key`, `protocol`, or a `protocol` given without a server `key`.                                 |

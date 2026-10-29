@@ -81,7 +81,7 @@ describe('parseWebSocketFrame — incomplete buffers return undefined', () => {
 	it('returns undefined when the payload is split mid-body, then parses after it is complete', () => {
 		const full = encodeWebSocketFrame(WEBSOCKET_OPCODE_TEXT, HELLO) // 7 bytes
 		// Every prefix shorter than the whole frame is incomplete.
-		for (let cut = 1; cut < full.length; cut += 1) {
+		for (const cut of Array.from({ length: full.length - 1 }, (_, index) => index + 1)) {
 			expect(parseWebSocketFrame(full.subarray(0, cut))).toBeUndefined()
 		}
 		expect(parseWebSocketFrame(full)?.payload.toString('utf-8')).toBe('Hello')
@@ -228,16 +228,19 @@ describe('codec properties — incomplete input', () => {
 			// wire (instead of one expect() per offset) so the ~131k-call matcher
 			// overhead doesn't blow the test timeout — full byte-level coverage is
 			// preserved, and a failure still reports the offending offset.
-			let firstThrow: number | undefined
-			let firstDefined: number | undefined
-			for (let cut = 0; cut < wire.length; cut += 1) {
-				try {
-					const result = parseWebSocketFrame(wire.subarray(0, cut))
-					if (result !== undefined && firstDefined === undefined) firstDefined = cut
-				} catch {
-					if (firstThrow === undefined) firstThrow = cut
-				}
-			}
+			const [firstThrow, firstDefined] = wire
+				.entries()
+				.reduce<readonly [number | undefined, number | undefined]>(
+					([thrown, defined], [cut]) => {
+						try {
+							const result = parseWebSocketFrame(wire.subarray(0, cut))
+							return [thrown, result !== undefined && defined === undefined ? cut : defined]
+						} catch {
+							return [thrown ?? cut, defined]
+						}
+					},
+					[undefined, undefined],
+				)
 			expect(firstThrow).toBeUndefined()
 			expect(firstDefined).toBeUndefined()
 			// The whole wire parses.
@@ -247,17 +250,17 @@ describe('codec properties — incomplete input', () => {
 
 	it('never throws on arbitrary random buffers — result is undefined or well-formed', () => {
 		const rng = seededRandom(2)
-		for (let index = 0; index < 1000; index += 1) {
+		Array.from({ length: 1000 }).forEach(() => {
 			const length = Math.floor(rng() * 301)
 			const buffer = randomBuffer(rng, length)
 			expect(() => parseWebSocketFrame(buffer)).not.toThrow()
 			const parsed = parseWebSocketFrame(buffer)
-			if (parsed === undefined) continue
+			if (parsed === undefined) return
 			expect(parsed.consumed).toBeLessThanOrEqual(buffer.length)
 			expect(parsed.payload.length).toBeGreaterThanOrEqual(0)
 			expect(typeof parsed.fin).toBe('boolean')
 			expect(typeof parsed.opcode).toBe('number')
-		}
+		})
 	})
 })
 
@@ -307,7 +310,7 @@ describe('codec properties — measurement and parsing agree', () => {
 describe('codec properties — mask XOR is an involution', () => {
 	it('masking then unmasking with the same key recovers the original bytes', () => {
 		const rng = seededRandom(6)
-		for (let index = 0; index < 100; index += 1) {
+		Array.from({ length: 100 }).forEach(() => {
 			const length = Math.floor(rng() * 200)
 			const buf = randomBuffer(rng, length)
 			const mask = randomBuffer(rng, 4)
@@ -318,25 +321,25 @@ describe('codec properties — mask XOR is an involution', () => {
 			// Direct XOR involution over the corpus: (b^m)^m === b.
 			const once = Buffer.alloc(length)
 			const twice = Buffer.alloc(length)
-			for (let byte = 0; byte < length; byte += 1) {
+			for (const [byte] of once.entries()) {
 				const b = buf.readUInt8(byte)
 				const m = mask.readUInt8(byte % 4)
 				once[byte] = b ^ m
 				twice[byte] = once.readUInt8(byte) ^ m
 			}
 			expect(twice.equals(buf)).toBe(true)
-		}
+		})
 	})
 })
 
 describe('codec properties — UTF-8 acceptance', () => {
 	it('decodes a valid UTF-8 corpus (buildText samples + known multibyte) exactly', () => {
 		const rng = seededRandom(7)
-		for (let index = 0; index < 20; index += 1) {
+		Array.from({ length: 20 }).forEach(() => {
 			const text = buildText(rng, Math.floor(rng() * 40))
 			const bytes = Buffer.from(text, 'utf-8')
 			expect(parseUTF8(bytes)).toBe(text)
-		}
+		})
 		const known = ['héllo wörld', '日本語', '🎉multi-byte🎉', 'naïve café', 'Ω≈ç√∫']
 		for (const text of known) {
 			expect(parseUTF8(Buffer.from(text, 'utf-8'))).toBe(text)

@@ -130,7 +130,7 @@ describe('WebSocket integration — limit & stress battery', () => {
 	})
 
 	it('opens/echoes/closes 25 times sequentially with no server accumulation', async () => {
-		for (let index = 0; index < 25; index += 1) {
+		for (const [index] of Array.from({ length: 25 }).entries()) {
 			const socket = await connect(inject('wsUrl'))
 			const reply = nextMessage(socket)
 			socket.send(`hello-${index}`)
@@ -214,7 +214,7 @@ describe('WebSocket integration — limit & stress battery', () => {
 			})
 		})
 
-		for (let index = 0; index < 100; index += 1) {
+		for (const [index] of Array.from({ length: 100 }).entries()) {
 			socket.send(String(index))
 		}
 		await done

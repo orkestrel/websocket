@@ -19,13 +19,25 @@ import { waitForEvent } from '@orkestrel/test'
  * @returns The generated string
  */
 export function buildText(rng: () => number, length: number): string {
-	let text = ''
-	for (let index = 0; index < length; index += 1) {
-		let point = Math.floor(rng() * 0xffff)
-		if (point >= 0xd800 && point <= 0xdfff) point -= 0x800
-		text += String.fromCodePoint(point)
+	return Array.from({ length: Math.max(0, Math.ceil(length)) }, () => {
+		const point = Math.floor(rng() * 0xffff)
+		return String.fromCodePoint(point >= 0xd800 && point <= 0xdfff ? point - 0x800 : point)
+	}).join('')
+}
+
+/** Records calls to a deterministic cyclic test generator. */
+export class TestSequence {
+	#calls = 0
+	readonly #period: number
+
+	constructor(period: number) {
+		this.#period = period
 	}
-	return text
+
+	next(): number {
+		this.#calls += 1
+		return (this.#calls % this.#period) / this.#period
+	}
 }
 
 // The small command vocabulary used by the live-client integration fixture. These

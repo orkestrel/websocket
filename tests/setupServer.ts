@@ -76,7 +76,7 @@ export interface EchoServerInterface {
 /** Builds deterministic pseudo-random bytes from a seeded generator. */
 export function randomBuffer(rng: () => number, length: number): Buffer {
 	const buffer = Buffer.alloc(length)
-	for (let index = 0; index < length; index += 1) buffer[index] = Math.floor(rng() * 256)
+	for (const [index] of buffer.entries()) buffer[index] = Math.floor(rng() * 256)
 	return buffer
 }
 
@@ -91,12 +91,10 @@ export function randomBuffer(rng: () => number, length: number): Buffer {
 export function buildCorpus(rng: () => number): readonly Buffer[] {
 	const lengths = [0, 1, 125, 126, 127, 65_535, 65_536]
 	const large = [70_000, 90_000, 120_000, 150_000, 200_000]
-	const corpus: Buffer[] = []
-	for (const length of lengths) {
-		for (let index = 0; index < 25; index += 1) corpus.push(randomBuffer(rng, length))
-	}
-	for (const length of large) corpus.push(randomBuffer(rng, length))
-	return corpus
+	return [
+		...lengths.flatMap((length) => Array.from({ length: 25 }, () => randomBuffer(rng, length))),
+		...large.map((length) => randomBuffer(rng, length)),
+	]
 }
 
 /** Encodes one RFC 6455 frame for tests, optionally clearing FIN for fragmentation cases. */
@@ -117,26 +115,38 @@ export function encodeTestFrame(
  * response. The returned array grows as complete frames arrive.
  */
 export function readClientFrames(client: Duplex): { readonly frames: readonly WebSocketFrame[] } {
-	const frames: WebSocketFrame[] = []
-	let buffer = Buffer.alloc(0)
-	let handshook = false
-	const handshakeEnd = Buffer.from('\r\n\r\n')
-	client.on('data', (chunk: Buffer) => {
-		buffer = Buffer.concat([buffer, chunk])
-		if (!handshook) {
-			const index = buffer.indexOf(handshakeEnd)
+	return new ClientFrames(client)
+}
+
+class ClientFrames {
+	readonly #frames: WebSocketFrame[] = []
+	#buffer: Buffer = Buffer.alloc(0)
+	#handshook = false
+	readonly #terminator = Buffer.from('\r\n\r\n')
+
+	constructor(client: Duplex) {
+		client.on('data', (chunk: Buffer) => this.#receive(chunk))
+	}
+
+	get frames(): readonly WebSocketFrame[] {
+		return this.#frames
+	}
+
+	#receive(chunk: Buffer): void {
+		this.#buffer = Buffer.concat([this.#buffer, chunk])
+		if (!this.#handshook) {
+			const index = this.#buffer.indexOf(this.#terminator)
 			if (index < 0) return
-			buffer = buffer.subarray(index + handshakeEnd.length)
-			handshook = true
+			this.#buffer = this.#buffer.subarray(index + this.#terminator.length)
+			this.#handshook = true
 		}
 		for (;;) {
-			const parsed = parseWebSocketFrame(buffer)
+			const parsed = parseWebSocketFrame(this.#buffer)
 			if (parsed === undefined) return
-			buffer = buffer.subarray(parsed.consumed)
-			frames.push(parsed)
+			this.#buffer = this.#buffer.subarray(parsed.consumed)
+			this.#frames.push(parsed)
 		}
-	})
-	return { frames }
+	}
 }
 
 // The listening half of the echo fixture: it holds the loopback and the live socket set

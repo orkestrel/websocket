@@ -16,19 +16,16 @@ import {
 	INTEGRATION_COUNT_REQUEST,
 	nextClose,
 	nextMessage,
+	TestSequence,
 } from './setup.js'
 import { createEchoServer } from './setupServer.js'
 
 describe('buildText', () => {
 	it('is deterministic for a given rng and produces the requested code-point length', () => {
-		let calls = 0
-		const rng = (): number => {
-			calls += 1
-			return (calls % 97) / 97
-		}
-		const first = buildText(rng, 12)
-		calls = 0
-		const second = buildText(rng, 12)
+		const firstSequence = new TestSequence(97)
+		const secondSequence = new TestSequence(97)
+		const first = buildText(() => firstSequence.next(), 12)
+		const second = buildText(() => secondSequence.next(), 12)
 		expect(first).toBe(second)
 		expect(Array.from(first).length).toBe(12)
 	})

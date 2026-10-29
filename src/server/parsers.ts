@@ -41,29 +41,18 @@ export function parseWebSocketFrame(buffer: Buffer): WebSocketFrame | undefined 
 	const rsv = (firstByte & 0x70) >> 4
 	const opcode = firstByte & 0x0f
 	const masked = (secondByte & 0x80) !== 0
-	let length = secondByte & 0x7f
-	let offset = 2
-
-	if (length === 126) {
-		if (buffer.length < offset + 2) return undefined
-		length = buffer.readUInt16BE(offset)
-		offset += 2
-	} else if (length === 127) {
-		if (buffer.length < offset + 8) return undefined
-		// Split into two 32-bit reads — a payload past 2^53 is beyond any real frame,
-		// and this keeps the arithmetic in safe-integer range.
-		const high = buffer.readUInt32BE(offset)
-		const low = buffer.readUInt32BE(offset + 4)
-		length = high * 0x1_0000_0000 + low
-		offset += 8
-	}
-
-	let mask: Buffer | undefined
-	if (masked) {
-		if (buffer.length < offset + 4) return undefined
-		mask = buffer.subarray(offset, offset + 4)
-		offset += 4
-	}
+	const prefix = secondByte & 0x7f
+	const header = prefix === 126 ? 4 : prefix === 127 ? 10 : 2
+	if (header > 2 && buffer.length < header) return undefined
+	const length =
+		prefix === 126
+			? buffer.readUInt16BE(2)
+			: prefix === 127
+				? buffer.readUInt32BE(2) * 0x1_0000_0000 + buffer.readUInt32BE(6)
+				: prefix
+	if (masked && buffer.length < header + 4) return undefined
+	const mask = masked ? buffer.subarray(header, header + 4) : undefined
+	const offset = header + (masked ? 4 : 0)
 
 	if (buffer.length < offset + length) return undefined
 
@@ -71,7 +60,7 @@ export function parseWebSocketFrame(buffer: Buffer): WebSocketFrame | undefined 
 	buffer.copy(payload, 0, offset, offset + length)
 
 	if (mask !== undefined) {
-		for (let index = 0; index < length; index += 1) {
+		for (const [index] of payload.entries()) {
 			payload[index] = payload.readUInt8(index) ^ mask.readUInt8(index % 4)
 		}
 	}

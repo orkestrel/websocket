@@ -1,5 +1,5 @@
 import type { WebSocketErrorCode } from './types.js'
-import { isInstance } from '@orkestrel/contract'
+import { holds, INTRINSICS, isInstance, isObject } from '@orkestrel/contract'
 
 // Errors for the WebSocket wrapper. A single `WebSocketError` carries a
 // machine-readable `code` naming the subject that was refused, so a `catch` branches
@@ -51,6 +51,7 @@ export class WebSocketError extends Error {
 		context?: Readonly<Record<string, unknown>>,
 	) {
 		super(message)
+		INTRINSICS.define(this, Symbol.for('@orkestrel/websocket.WebSocketError'), { value: this })
 		this.name = 'WebSocketError'
 		this.code = code
 		if (context !== undefined) this.context = context
@@ -60,6 +61,10 @@ export class WebSocketError extends Error {
 /**
  * Checks whether a caught value is a {@link WebSocketError}, narrowing it so a `catch` can
  * branch on `error.code`.
+ *
+ * @remarks
+ * Accepts branded errors from another installed copy and subclasses, without testing
+ * `name`. Refuses unbranded look-alikes, transparent proxies, and invalid members.
  *
  * @param value - The value to test (typically a `catch` binding)
  * @returns True if `value` is a `WebSocketError`; false otherwise
@@ -76,5 +81,15 @@ export class WebSocketError extends Error {
  * ```
  */
 export function isWebSocketError(value: unknown): value is WebSocketError {
-	return isInstance(value, WebSocketError)
+	return holds(() => {
+		if (!isInstance(value, Error) || INTRINSICS.prototype(value) === Error.prototype) return false
+		const brand = INTRINSICS.describe(value, Symbol.for('@orkestrel/websocket.WebSocketError'))
+		if (brand?.value !== value) return false
+		const code: unknown = INTRINSICS.reflect.read(value, 'code')
+		const context: unknown = INTRINSICS.reflect.read(value, 'context')
+		return (
+			(code === 'OPTION' || code === 'LIMIT' || code === 'CLOSE' || code === 'FRAME') &&
+			(context === undefined || isObject(context))
+		)
+	})
 }
