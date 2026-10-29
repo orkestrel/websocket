@@ -797,6 +797,8 @@ import { createRequire } from 'node:module'
 import * as imported from '@orkestrel/websocket'
 const required = createRequire(import.meta.url)('@orkestrel/websocket')
 const copied = await import(${JSON.stringify(pathToFileURL(join(copy, 'dist/src/server/index.js')).href)})
+const entries = [imported, required, copied]
+assert.equal(new Set(entries.map((entry) => entry.WebSocketError)).size, entries.length)
 for (const source of [imported, required, copied]) {
   const error = new source.WebSocketError('FRAME', 'invalid')
   class Derived extends source.WebSocketError {

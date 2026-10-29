@@ -1,5 +1,5 @@
 import type { WebSocketErrorCode } from './types.js'
-import { holds, INTRINSICS, isInstance, isObject } from '@orkestrel/contract'
+import { holds, INTRINSICS, isFunction, isInstance, isObject } from '@orkestrel/contract'
 
 // Errors for the WebSocket wrapper. A single `WebSocketError` carries a
 // machine-readable `code` naming the subject that was refused, so a `catch` branches
@@ -89,7 +89,7 @@ export function isWebSocketError(value: unknown): value is WebSocketError {
 		const context: unknown = INTRINSICS.reflect.read(value, 'context')
 		return (
 			(code === 'OPTION' || code === 'LIMIT' || code === 'CLOSE' || code === 'FRAME') &&
-			(context === undefined || isObject(context))
+			(context === undefined || isObject(context) || isFunction(context))
 		)
 	})
 }
