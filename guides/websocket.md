@@ -41,26 +41,26 @@ Narrow the header before the call. `sec-websocket-key` is typed `string | undefi
 
 ### Factories
 
-| API                   | Kind     | Summary                                                                                                                                       |
+| Name                  | Kind     | Summary                                                                                                                                       |
 | --------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | `createNodeWebSocket` | function | Creates a server-native WebSocket over a raw upgraded `node:stream` Duplex socket — server mode when a `key` is given, client mode otherwise. |
 
 ### Classes
 
-| API             | Kind  | Summary                                                                                                                                                                                                                |
+| Name            | Kind  | Summary                                                                                                                                                                                                                |
 | --------------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `NodeWebSocket` | class | Implements the wrapper contract over a raw upgraded `node:stream` Duplex socket, driving the RFC 6455 handshake, the frame codec, auto-pong, and the close handshake, and surfacing every event on an owned `emitter`. |
 
 ### Errors
 
-| API                | Kind     | Summary                                                                                                                                             |
+| Name               | Kind     | Summary                                                                                                                                             |
 | ------------------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `WebSocketError`   | class    | Represents an error the WebSocket wrapper throws for a refused caller-supplied value, carrying a machine-readable `code` and an optional `context`. |
 | `isWebSocketError` | function | Checks whether a caught value is a `WebSocketError`, narrowing it so a `catch` can branch on `error.code`.                                          |
 
 ### Codec helpers
 
-| API                         | Kind     | Summary                                                                                                                                                                |
+| Name                        | Kind     | Summary                                                                                                                                                                |
 | --------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `computeWebSocketAccept`    | function | Computes the `Sec-WebSocket-Accept` response value for an RFC 6455 upgrade.                                                                                            |
 | `isWebSocketKey`            | function | Checks whether a value is a canonical RFC 6455 `Sec-WebSocket-Key`.                                                                                                    |
@@ -76,7 +76,7 @@ Narrow the header before the call. `sec-websocket-key` is typed `string | undefi
 
 A `Shape` cell holds the constant's declared type.
 
-| API                                 | Kind  | Shape                 | Summary                                                                                                                                     |
+| Name                                | Kind  | Shape                 | Summary                                                                                                                                     |
 | ----------------------------------- | ----- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | `WEBSOCKET_GUID`                    | const | `string`              | Names the accept GUID concatenated to a client's `Sec-WebSocket-Key` before the accept hash, '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'.        |
 | `WEBSOCKET_VERSION`                 | const | `string`              | Names the supported protocol version, '13'.                                                                                                 |
@@ -105,7 +105,7 @@ A `Shape` cell holds the constant's declared type.
 
 A `Shape` cell holds an interface's data members as bare names in braces, `?` marking an optional member and `plus` introducing its call-signature members, and a type alias's own type literal with a union's arms escaped as `\|`.
 
-| API                      | Kind      | Shape                                                                          | Summary                                                                                                                                                                                          |
+| Name                     | Kind      | Shape                                                                          | Summary                                                                                                                                                                                          |
 | ------------------------ | --------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `WebSocketReadyState`    | type      | `0 \| 1 \| 2 \| 3`                                                             | Represents a WebSocket ready state — the stage a connection has reached between the handshake and the socket's end.                                                                              |
 | `WebSocketFrame`         | interface | `{ fin, opcode, payload, consumed, masked, rsv }`                              | Represents a parsed RFC 6455 frame — the structured result of decoding one frame off the wire.                                                                                                   |
